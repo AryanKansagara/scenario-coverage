@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react'
+import { span } from './engine/coverage.ts'
 import { scopeFromUrl, trend, useAnalysis, useProject } from './projectData.ts'
 import { Empty, fmtN, fmtPct, Link } from './ui.tsx'
 import { HeatLegend, Heatmap, TrendChart } from './viz.tsx'
@@ -34,7 +35,7 @@ export default function Report({ id }: { id: string }) {
 
       <h2>ODD and thresholds</h2>
       <table><thead><tr><th>Parameter</th><th>Domain</th><th className="num">Bins covered</th></tr></thead>
-        <tbody>{project.odd.map((d, i) => <tr key={d.key}><th>{d.label}</th><td>{d.kind === 'range' ? `${d.min}–${d.max} ${d.unit ?? ''} in ${d.bins} bins` : (d.categories ?? []).join(', ')}</td><td className="num">{a.cov.oneWay[i].covered}/{a.cov.oneWay[i].total}</td></tr>)}</tbody></table>
+        <tbody>{project.odd.map((d, i) => <tr key={d.key}><th>{d.label}</th><td>{d.kind === 'range' ? `${span(d.min ?? 0, d.max ?? 1)} ${d.unit ?? ''} in ${d.bins} bins` : (d.categories ?? []).join(', ')}</td><td className="num">{a.cov.oneWay[i].covered}/{a.cov.oneWay[i].total}</td></tr>)}</tbody></table>
       <p className="small muted">Fail if: TTC &lt; {th.ttc} s · PET &lt; {th.pet} s · gap &lt; {th.minDist} m · deceleration &gt; {th.maxDecel} m/s² · jerk &gt; {th.maxJerk} m/s³ · lane offset &gt; {th.laneDev} m · collision · simulator failure.</p>
 
       {tr.length > 1 && <><h2>Coverage trend</h2><TrendChart points={tr} /></>}

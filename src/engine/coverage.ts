@@ -16,10 +16,12 @@ export function binOf(p: OddParam, v: ParamValue | undefined): number {
 }
 
 const trim = (n: number) => String(Math.round(n * 100) / 100)
+/** "5–16", or "-30 to -20" when a dash would read as a minus sign. */
+export const span = (a: number, b: number) => a < 0 || b < 0 ? `${trim(a)} to ${trim(b)}` : `${trim(a)}–${trim(b)}`
 export function binLabels(p: OddParam): string[] {
   if (p.kind === 'category') return [...(p.categories ?? [])]
   const lo = p.min ?? 0, hi = p.max ?? 1, b = nBins(p), w = (hi - lo) / b
-  return Array.from({ length: b }, (_, i) => `${trim(lo + i * w)}–${trim(lo + (i + 1) * w)}`)
+  return Array.from({ length: b }, (_, i) => span(lo + i * w, lo + (i + 1) * w))
 }
 
 /** The value range covered by bin i (numeric params only). */

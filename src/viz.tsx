@@ -27,7 +27,7 @@ export function Heatmap({ odd, pair, reveal = 1, compact, onCell, selected }: { 
             const v = n ? Math.round(18 + 82 * Math.sqrt(n / max)) : 0
             const rate = n ? f / n : 0
             const label = `${A.label} ${la[i]} × ${B.label} ${lb[j]}: ${n ? `${n} run${n > 1 ? 's' : ''}, ${f} failed` : 'not tested'}`
-            const cls = `hm-cell${n && shown ? ' hit' : ''}${!n ? ' gap' : ''}${rate >= 0.5 ? ' hot' : rate > 0 ? ' warm' : ''}${selected && selected[0] === i && selected[1] === j ? ' sel' : ''}`
+            const cls = `hm-cell${n && shown ? ' hit' : ''}${n && shown && v > 50 ? ' deep' : ''}${!n ? ' gap' : ''}${rate >= 0.5 ? ' hot' : rate > 0 ? ' warm' : ''}${selected && selected[0] === i && selected[1] === j ? ' sel' : ''}`
             return onCell
               ? <button key={j} type="button" className={cls} style={{ ['--v' as string]: `${shown ? v : 0}%` }} aria-label={label} title={label} onClick={() => onCell(i, j)}>{!compact && n ? <span>{n}</span> : null}</button>
               : <div key={j} className={cls} style={{ ['--v' as string]: `${shown ? v : 0}%` }} title={label}>{!compact && n ? <span>{n}</span> : null}</div>
@@ -97,7 +97,7 @@ export function Replay({ rows, th, autoplay = false, loop = false, compact = fal
   const i = Math.max(0, Math.min(res.series.t.length - 1, Math.round(((t - t0) / Math.max(1e-9, t1 - t0)) * (res.series.t.length - 1))))
   const ttc = res.series.ttc[i], gap = res.series.dist[i], acc = res.series.accel[i]
   const danger = ttc < th.ttc, warn = ttc < th.ttc * 2
-  const W = compact ? 96 : 120, left = compact ? 18 : 24
+  const W = compact ? 72 : 96, left = 14, H = laneWidth * (compact ? 4.4 : 5)
   const vx = e.x - left
   const dash = 12
   const dashOff = -(vx % dash)
@@ -105,7 +105,7 @@ export function Replay({ rows, th, autoplay = false, loop = false, compact = fal
   return (
     <div className={`replay${compact ? ' compact' : ''}`} ref={box}>
       <div className="replay-stage">
-        <svg viewBox={`0 -${laneWidth * 2.2} ${W} ${laneWidth * 4.4}`} role="img" aria-label={`Top-down replay at ${t.toFixed(1)} seconds. Time to collision ${Number.isFinite(ttc) ? ttc.toFixed(2) + ' seconds' : 'not closing'}.`} preserveAspectRatio="xMidYMid slice">
+        <svg viewBox={`0 ${-H / 2} ${W} ${H}`} style={{ aspectRatio: `${W} / ${H}` }} role="img" aria-label={`Top-down replay at ${t.toFixed(1)} seconds. Time to collision ${Number.isFinite(ttc) ? ttc.toFixed(2) + ' seconds' : 'not closing'}.`} preserveAspectRatio="xMidYMid meet">
           <rect x="0" y={-laneWidth * 1.5} width={W} height={laneWidth * 3} className="rp-road" />
           {[-1.5, 1.5].map(k => <line key={k} x1="0" x2={W} y1={k * laneWidth} y2={k * laneWidth} className="rp-edge" />)}
           {[-0.5, 0.5].map(k => <line key={k} x1={dashOff - dash} x2={W + dash} y1={k * laneWidth} y2={k * laneWidth} className="rp-lane" strokeDasharray={`${dash / 2} ${dash / 2}`} />)}
@@ -185,7 +185,7 @@ export function Hist({ values, threshold, unit, lowerIsBad = true, bins = 16, ma
 
 export function TrendChart({ points, compareIds }: { points: { id: string; label: string; pairwise: number; oneWay: number; failRate: number; cumRuns: number }[]; compareIds?: string[] }) {
   if (!points.length) return null
-  const W = 640, H = 220, padL = 40, padR = 14, padT = 14, padB = 44
+  const W = 960, H = 250, padL = 44, padR = 60, padT = 24, padB = 44
   const X = (i: number) => padL + (points.length === 1 ? (W - padL - padR) / 2 : (i / (points.length - 1)) * (W - padL - padR))
   const Y = (v: number) => padT + (1 - v) * (H - padT - padB)
   const line = (k: 'pairwise' | 'oneWay') => points.map((p, i) => `${i ? 'L' : 'M'}${X(i)},${Y(p[k])}`).join('')
@@ -196,7 +196,7 @@ export function TrendChart({ points, compareIds }: { points: { id: string; label
       {points.map((p, i) => <rect key={p.id} x={X(i) - bw / 2} y={Y(p.failRate)} width={bw} height={Y(0) - Y(p.failRate)} rx="4" className={`fail-bar${compareIds?.includes(p.id) ? ' on' : ''}`}><title>{`${p.label}: ${Math.round(p.failRate * 100)}% of runs failed`}</title></rect>)}
       <path d={line('oneWay')} className="l-oneway" />
       <path d={line('pairwise')} className="l-pair" />
-      {points.map((p, i) => <g key={p.id}><circle cx={X(i)} cy={Y(p.pairwise)} r="5" className="dot" /><text x={X(i)} y={Y(p.pairwise) - 10} textAnchor="middle" className="val">{Math.round(p.pairwise * 1000) / 10}%</text>
+      {points.map((p, i) => <g key={p.id}><circle cx={X(i)} cy={Y(p.pairwise)} r="5" className="dot" /><text x={X(i) + (i === 0 && points.length > 1 ? 8 : 0)} y={Y(p.pairwise) - 10} textAnchor={i === 0 && points.length > 1 ? 'start' : 'middle'} className="val">{Math.round(p.pairwise * 1000) / 10}%</text>
         <text x={X(i)} y={H - 24} textAnchor="middle" className="axis">{p.label.split('·')[0].trim()}</text><text x={X(i)} y={H - 10} textAnchor="middle" className="axis faint">{p.cumRuns} runs total</text></g>)}
     </svg>
   )

@@ -114,7 +114,7 @@ export function describe(odd: Odd, runs: Run[]): string[] {
       const xs = vals.map(Number).filter(Number.isFinite).sort((a, b) => a - b)
       if (!xs.length) continue
       const lo = q(xs, 0.1), hi = q(xs, 0.9), span = ((hi - lo) / Math.max(1e-9, (d.max ?? 1) - (d.min ?? 0)))
-      if (span <= 0.45) out.push({ text: `${d.label} ${fmt(lo)}–${fmt(hi)}${d.unit ? ' ' + d.unit : ''}`, tight: span })
+      if (span <= 0.45) out.push({ text: `${d.label} ${lo < 0 || hi < 0 ? `${fmt(lo)} to ${fmt(hi)}` : `${fmt(lo)}–${fmt(hi)}`}${d.unit ? ' ' + d.unit : ''}`, tight: span })
     } else {
       const counts = new Map<string, number>()
       for (const v of vals) counts.set(String(v), (counts.get(String(v)) ?? 0) + 1)

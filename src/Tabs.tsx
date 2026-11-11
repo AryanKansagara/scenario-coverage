@@ -32,7 +32,7 @@ const tabHref = (p: TabProps, t: string, extra = '') => {
 /** Pair with the most failures: the most informative heatmap to open with. */
 function defaultPair(a: TabProps['a']) {
   let best = 0, score = -1
-  a.cov.pairs.forEach((p, i) => { const f = Math.max(...p.fails.flat()) * 2 + p.total - p.covered; if (f > score) { score = f; best = i } })
+  a.cov.pairs.forEach((p, i) => { const f = (p.total - p.covered) * 10 + p.fails.flat().reduce((s, x) => s + x, 0) / Math.max(1, p.counts.flat().reduce((s, x) => s + x, 0)) * p.total; if (f > score) { score = f; best = i } })
   return best
 }
 
