@@ -109,12 +109,11 @@ function pick(r: () => number, w: Record<string, number>): string {
 
 export interface SampleData { campaigns: Campaign[]; traj: Record<string, TrajRow[]> }
 
-/** 600 runs in three campaigns. Every run is simulated and measured; every 8th keeps its trajectory for replay. */
-export function generateSample(): SampleData {
+/** Parameter sets for the three campaigns (cheap; no simulation). */
+export function sampleParams(): Params[][] {
   const r = rng(2026)
-  const traj: Record<string, TrajRow[]> = {}
-  const campaigns = MIXES.map((m, ci): Campaign => {
-    const runs: Run[] = []
+  return MIXES.map(m => {
+    const out: Params[] = []
     for (let i = 0; i < m.n; i++) {
       let params: Params
       // Combinations this synthetic programme never got to, so the sample has real gaps to find.
@@ -125,14 +124,27 @@ export function generateSample(): SampleData {
         rel_speed: Math.round(m.rel[1] - Math.sqrt(r()) * (m.rel[1] - m.rel[0])),
       }
       while ((params.weather === 'snow' && (params.lighting === 'night' || params.road === 'work_zone' || Number(params.ego_speed) > 95)) || (params.event === 'debris' && params.road === 'on_ramp') || (params.event === 'merge' && params.road === 'curve'))
+      out.push(params)
+    }
+    return out
+  })
+}
+
+export const SAMPLE_CAMPAIGNS = MIXES.map(m => ({ label: m.label, date: m.date }))
+
+/** 600 runs in three campaigns. Every run is simulated and measured; every 8th keeps its trajectory for replay. */
+export function generateSample(): SampleData {
+  const traj: Record<string, TrajRow[]> = {}
+  const campaigns = sampleParams().map((list, ci): Campaign => {
+    const runs: Run[] = list.map((params, i) => {
       const id = `C${ci + 1}-${String(i + 1).padStart(4, '0')}`
       const rows = simulate(params, ci * 1000 + i + 1)
       const { metrics } = computeMetrics(rows)
       const keep = i % 8 === 0
       if (keep) traj[id] = rows
-      runs.push({ id, scenario: `${params.event}_${params.road}`, params, metrics, traj: keep || undefined })
-    }
-    return { id: `sample-c${ci + 1}`, label: m.label, date: m.date, runs, source: 'Synthetic campaign' }
+      return { id, scenario: `${params.event}_${params.road}`, params, metrics, traj: keep || undefined }
+    })
+    return { id: `sample-c${ci + 1}`, label: MIXES[ci].label, date: MIXES[ci].date, runs, source: 'Synthetic campaign' }
   })
   return { campaigns, traj }
 }

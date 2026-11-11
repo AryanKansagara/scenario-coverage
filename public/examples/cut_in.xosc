@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic example: a car cuts in front of a tractor-trailer on a straight highway. -->
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="2" date="2026-10-01T00:00:00" description="Highway cut-in, synthetic example" author="Scenario Coverage example"/>
+  <ParameterDeclarations>
+    <ParameterDeclaration name="ego_speed" parameterType="double" value="88">
+      <ConstraintGroup><ValueConstraint rule="greaterOrEqual" value="0"/></ConstraintGroup>
+      <Range lowerLimit="60" upperLimit="105"/>
+    </ParameterDeclaration>
+    <ParameterDeclaration name="gap" parameterType="double" value="9">
+      <Range lowerLimit="5" upperLimit="60"/>
+    </ParameterDeclaration>
+    <ParameterDeclaration name="rel_speed" parameterType="double" value="-8">
+      <Range lowerLimit="-30" upperLimit="10"/>
+    </ParameterDeclaration>
+    <ParameterDeclaration name="weather" parameterType="string" value="clear"/>
+    <ParameterDeclaration name="lighting" parameterType="string" value="dusk"/>
+    <ParameterDeclaration name="EgoSpeedMps" parameterType="double" value="24.4"/>
+  </ParameterDeclarations>
+  <CatalogLocations/>
+  <RoadNetwork><LogicFile filepath="straight_3lane_2km.xodr"/></RoadNetwork>
+  <Entities>
+    <ScenarioObject name="Ego"><Vehicle name="tractor_trailer" vehicleCategory="semitrailer"><BoundingBox><Center x="0" y="0" z="2"/><Dimensions width="2.6" length="21" height="4"/></BoundingBox><Performance maxSpeed="30" maxAcceleration="2" maxDeceleration="7"/><Axles><FrontAxle maxSteering="0.5" wheelDiameter="1" trackWidth="2" positionX="18" positionZ="0.5"/><RearAxle maxSteering="0" wheelDiameter="1" trackWidth="2" positionX="0" positionZ="0.5"/></Axles><Properties/></Vehicle></ScenarioObject>
+    <ScenarioObject name="CutInCar"><Vehicle name="sedan" vehicleCategory="car"><BoundingBox><Center x="1.4" y="0" z="0.8"/><Dimensions width="1.9" length="4.8" height="1.5"/></BoundingBox><Performance maxSpeed="60" maxAcceleration="5" maxDeceleration="9"/><Axles><FrontAxle maxSteering="0.5" wheelDiameter="0.7" trackWidth="1.6" positionX="2.8" positionZ="0.35"/><RearAxle maxSteering="0" wheelDiameter="0.7" trackWidth="1.6" positionX="0" positionZ="0.35"/></Axles><Properties/></Vehicle></ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init><Actions>
+      <Private entityRef="Ego"><PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="$EgoSpeedMps"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>
+      <Private entityRef="CutInCar"><PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="22.2"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>
+    </Actions></Init>
+    <Story name="CutInStory"/>
+    <StopTrigger/>
+  </Storyboard>
+</OpenSCENARIO>

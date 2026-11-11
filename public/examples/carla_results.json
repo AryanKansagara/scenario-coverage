@@ -1,0 +1,222 @@
+[
+ {
+  "scenario": "EX-0051",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0052",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0053",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0054",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0055",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0056",
+  "success": false,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "1",
+    "result": "FAILURE"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "41 %",
+    "result": "FAILURE"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0057",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0058",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0059",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ },
+ {
+  "scenario": "EX-0060",
+  "success": true,
+  "criteria": [
+   {
+    "name": "CollisionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "0",
+    "actual": "0",
+    "result": "SUCCESS"
+   },
+   {
+    "name": "RouteCompletionTest",
+    "actor": "vehicle.tesla.cybertruck (id=221)",
+    "optional": false,
+    "expected": "100 %",
+    "actual": "100 %",
+    "result": "SUCCESS"
+   }
+  ]
+ }
+]
