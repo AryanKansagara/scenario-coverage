@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { parseCsv } from './engine/csv.ts'
-import { computeMetrics } from './engine/metrics.ts'
-import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, parseXosc, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscToRun, type CarlaResult, type Format, type Issue, type Mapping, type Role, type Xosc } from './engine/parse.ts'
+import { computeMetrics, toTracks } from './engine/metrics.ts'
+import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
 import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
 import { createSampleProject } from './projectData.ts'
 import { TH_FIELDS } from './Settings.tsx'
@@ -12,7 +12,7 @@ interface Props { project: Project; traj: TrajStore; update(p: Partial<Project>)
 
 type Staged =
   | { kind: 'table'; format: Format; fileName: string; headers: string[]; rows: string[][]; lines: number[]; map: Mapping }
-  | { kind: 'xosc'; files: { name: string; x: Xosc }[]; errors: string[] }
+  | { kind: 'xosc'; batch: XoscBatch }
   | { kind: 'carla'; fileName: string; results: CarlaResult[] }
   | { kind: 'traj'; fileName: string; byRun: Map<string, TrajRow[]>; issues: Issue[]; degrees: boolean }
 
@@ -34,10 +34,8 @@ export default function DataTab({ project, traj, update }: Props) {
       const texts = await Promise.all(list.map(f => f.text()))
       const fmt = detect(list[0].name, texts[0])
       if (fmt === 'xosc') {
-        const out: { name: string; x: Xosc }[] = [], errors: string[] = []
-        list.forEach((f, i) => { try { out.push({ name: f.name, x: parseXosc(texts[i]) }) } catch (e) { errors.push(`${f.name}: ${(e as Error).message}`) } })
-        setStaged({ kind: 'xosc', files: out, errors })
-      } else if (fmt === 'carla-json') setStaged({ kind: 'carla', fileName: list[0].name, results: list.flatMap((_, i) => parseCarla(texts[i])) })
+        setStaged({ kind: 'xosc', batch: xoscRuns(list.map((f, i) => ({ name: f.name, text: texts[i] }))) })
+      } else if (fmt === 'carla-json') setStaged({ kind: 'carla', fileName: list.length > 1 ? `${list[0].name} + ${list.length - 1} more` : list[0].name, results: list.flatMap((_, i) => parseCarla(texts[i])) })
       else if (fmt === 'trajectory-csv') {
         const byRun = new Map<string, TrajRow[]>(), issues: Issue[] = []
         let degrees = false
@@ -70,7 +68,7 @@ export default function DataTab({ project, traj, update }: Props) {
           <div className={`drop${over ? ' over' : ''}`} role="button" tabIndex={0} onClick={() => input.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.current?.click() } }}
             onDragOver={e => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)} onDrop={e => { e.preventDefault(); setOver(false); void load(e.dataTransfer.files) }}>
             <h3>Drop files here, or click to choose</h3>
-            <p className="muted small">{Object.values(FORMATS).join(' · ')}. Several .xosc or trajectory files at once are fine.</p>
+            <p className="muted small">{Object.values(FORMATS).join(' · ')}. Several .xosc, result or trajectory files at once are fine; drop a parameter value distribution together with its scenario file.</p>
             <input ref={input} type="file" multiple hidden accept=".csv,.tsv,.txt,.json,.xosc,.xml" onChange={e => { if (e.target.files) void load(e.target.files); e.target.value = '' }} />
           </div>
           <p className="muted small">Example files: {['scenario_runs.csv', 'cut_in.xosc', 'carla_results.json', 'trajectory_run.csv'].map((f, i) => <span key={f}>{i ? ' · ' : ''}<button type="button" className="linkish" onClick={() => void loadExample(f)}>{f}</button> <a href={`/examples/${f}`} download aria-label={`Download ${f}`}>&darr;</a></span>)}</p>
@@ -152,22 +150,27 @@ function TableImport({ s, setS, project, update, done }: { s: Extract<Staged, { 
 }
 
 function XoscImport({ s, project, update, done }: { s: Extract<Staged, { kind: 'xosc' }>; project: Project; update: Props['update']; done(): void }) {
-  const runs = s.files.map(f => xoscToRun(f.x, f.name))
-  const suggested = xoscOdd(s.files.map(f => f.x), runs)
+  const { parsed, runs, notes, errors } = s.batch
+  const suggested = useMemo(() => xoscOdd(parsed.map(f => f.x), runs), [parsed, runs])
   const [label, setLabel] = useState(`Catalog ${today()}`)
   const [date, setDate] = useState(today())
   const odd = project.odd.length ? [...project.odd, ...suggested.filter(d => !project.odd.some(o => o.key === d.key))] : suggested
+  const show = (o: Record<string, unknown>, unit = '') => Object.entries(o).map(([k, v]) => `${k}=${v}${unit}`).join(', ') || '—'
   return <>
-    <p><b>{s.files.length} OpenSCENARIO file{s.files.length === 1 ? '' : 's'}</b>. Each becomes one planned run (no verdict until results arrive; attach CARLA results or a result table later).</p>
-    {s.errors.map(e => <p key={e} className="error small">{e}</p>)}
+    <p><b>{parsed.length} OpenSCENARIO file{parsed.length === 1 ? '' : 's'}</b> &rarr; <b>{runs.length} planned run{runs.length === 1 ? '' : 's'}</b>. A scenario file is one run; a parameter value distribution is one run per enumerated set. No verdict until results arrive: attach CARLA results or a result table later.</p>
+    {errors.map(e => <p key={e} className="error small">{e}</p>)}
+    {notes.map(n => <p key={n} className="warn-text small">{n}</p>)}
     <div className="table-wrap"><table>
-      <thead><tr><th>File</th><th>Scenario</th><th>Parameters</th><th>Entities</th><th>Init speeds</th></tr></thead>
-      <tbody>{s.files.map(f => <tr key={f.name}><th className="break">{f.name}</th><td>{f.x.name}</td><td className="small">{Object.entries(f.x.params).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}</td><td className="small">{f.x.entities.map(e => `${e.name} (${e.category ?? e.type})`).join(', ')}</td><td className="small">{Object.entries(f.x.initSpeeds).map(([k, v]) => `${k} ${v} m/s`).join(', ') || '—'}</td></tr>)}</tbody>
+      <thead><tr><th>File</th><th>Scenario</th><th>Parameters</th><th>Entities</th><th>Init speeds</th><th>Environment</th></tr></thead>
+      <tbody>{parsed.map(({ name, x }) => <tr key={name}><th className="break">{name}</th><td>{x.name}</td>
+        <td className="small">{x.dist ? `${x.dist.sets.length} parameter set${x.dist.sets.length === 1 ? '' : 's'} for ${x.dist.scenarioFile || 'a scenario'}${x.dist.sets.length ? `: ${[...new Set(x.dist.sets.flatMap(d => Object.keys(d)))].join(', ')}` : ''}` : show(x.params)}</td>
+        <td className="small">{x.entities.map(e => `${e.name} (${e.category ?? e.type})`).join(', ') || '—'}</td>
+        <td className="small">{show(x.initSpeeds, ' m/s')}</td><td className="small">{show(x.env)}</td></tr>)}</tbody>
     </table></div>
-    <p className="muted small">ODD after import: {odd.map(d => d.label).join(', ')}. Declared &lt;Range&gt; constraints are used as bounds when present.</p>
+    <p className="muted small">ODD after import: {odd.map(d => d.label).join(', ') || 'none'}. Declared value constraints are used as bounds when present.</p>
     <CampaignFields label={label} setLabel={setLabel} date={date} setDate={setDate} />
     <div className="row gap">
-      <button type="button" className="btn primary" disabled={!runs.length} onClick={() => void addCampaign(project, update, { id: uuid(), label, date, runs, source: 'OpenSCENARIO' }, { kind: 'xosc', fileName: s.files.map(f => f.name).join(', '), rows: runs.length, skipped: s.errors.length }, odd)}>Import {runs.length} scenario{runs.length === 1 ? '' : 's'}</button>
+      <button type="button" className="btn primary" disabled={!runs.length} onClick={() => void addCampaign(project, update, { id: uuid(), label, date, runs, source: 'OpenSCENARIO' }, { kind: 'xosc', fileName: parsed.map(f => f.name).join(', '), rows: runs.length, skipped: errors.length }, odd)}>Import {runs.length} scenario{runs.length === 1 ? '' : 's'}</button>
       <button type="button" className="btn ghost" onClick={done}>Cancel</button>
     </div>
   </>
@@ -207,9 +210,15 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
   const ids = [...s.byRun.keys()]
   const matched = ids.filter(id => all.some(r => r.id === id))
   const [busy, setBusy] = useState(false)
+  // Files without length/width columns need a footprint for the ego; other actors default to a 4.8 x 1.9 m car.
+  const egoOf = (rows: TrajRow[]) => { try { return toTracks(rows).ego.id } catch { return '' } }
+  const unsized = ids.filter(id => { const rows = s.byRun.get(id)!, ego = egoOf(rows); return rows.some(r => r.id === ego && r.len === undefined) })
+  const [egoLen, setEgoLen] = useState(21)
+  const [egoWid, setEgoWid] = useState(2.6)
   const commit = async () => {
     setBusy(true)
     await new Promise(r => setTimeout(r, 20))
+    for (const id of unsized) { const rows = s.byRun.get(id)!, ego = egoOf(rows); for (const r of rows) if (r.id === ego) { r.len ??= egoLen; r.wid ??= egoWid } }
     const store: TrajStore = { ...traj }
     const metrics = new Map<string, Run['metrics']>()
     const failed: string[] = []
@@ -230,6 +239,15 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
   return <>
     <p><b>{s.fileName}</b> · {ids.length} run{ids.length === 1 ? '' : 's'} · headings in {s.degrees ? 'degrees (converted)' : 'radians'}</p>
     <p className="small">{matched.length} match existing runs by id and will get TTC, PET, min gap, braking, jerk and lane offset recomputed. {ids.length - matched.length ? <span className="warn-text">{ids.length - matched.length} have no matching run ({ids.filter(i => !matched.includes(i)).slice(0, 4).join(', ')}) and go into a new campaign without ODD parameters.</span> : null}</p>
+    {unsized.length > 0 && <>
+      <p className="small">{unsized.length === ids.length ? 'The file has' : `${unsized.length} runs have`} no length and width for the ego ({egoOf(s.byRun.get(unsized[0])!)}). TTC, gap and collision checks use this footprint, so set it to your vehicle:</p>
+      <div className="inline-fields">
+        <label className="field"><span>Ego length (m)</span><input type="number" min="1" max="30" step="0.1" value={egoLen} onChange={e => setEgoLen(Math.max(1, Number(e.target.value)))} /></label>
+        <label className="field"><span>Ego width (m)</span><input type="number" min="0.5" max="4" step="0.1" value={egoWid} onChange={e => setEgoWid(Math.max(0.5, Number(e.target.value)))} /></label>
+        <button type="button" className="btn ghost sm" onClick={() => { setEgoLen(4.8); setEgoWid(1.9) }}>Passenger car</button>
+        <button type="button" className="btn ghost sm" onClick={() => { setEgoLen(21); setEgoWid(2.6) }}>Tractor-trailer</button>
+      </div>
+    </>}
     <Issues issues={s.issues} />
     <div className="row gap"><button type="button" className="btn primary" disabled={busy} onClick={() => void commit()}>{busy ? 'Measuring' : 'Compute metrics and save'}</button><button type="button" className="btn ghost" onClick={done}>Cancel</button></div>
   </>

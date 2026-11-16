@@ -11,6 +11,8 @@ export interface OddParam {
   max?: number
   bins?: number
   categories?: string[]
+  /** Original OpenSCENARIO parameter name, when the dimension came from a declared parameter. */
+  ref?: string
 }
 export type Odd = OddParam[]
 

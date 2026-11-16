@@ -7,7 +7,7 @@ export interface Track { id: string; len: number; wid: number; t: number[]; x: n
 
 export const DEFAULT_SIZE: Record<string, [number, number]> = { truck: [21, 2.6], car: [4.8, 1.9] }
 
-/** Groups rows by actor and sorts each track by time. The ego is the actor named "ego" (any case) or the first one seen. */
+/** Groups rows by actor and sorts each track by time. The ego is the actor whose id contains "ego" or "hero" (CARLA's role name), else the first one seen. */
 export function toTracks(rows: TrajRow[]): { ego: Track; others: Track[] } {
   const by = new Map<string, TrajRow[]>()
   for (const r of rows) { const l = by.get(r.id); if (l) l.push(r); else by.set(r.id, [r]) }
@@ -17,7 +17,7 @@ export function toTracks(rows: TrajRow[]): { ego: Track; others: Track[] } {
     return { id, len: l[0].len ?? (big ? 21 : 4.8), wid: l[0].wid ?? (big ? 2.6 : 1.9), t: l.map(r => r.t), x: l.map(r => r.x), y: l.map(r => r.y), h: l.map(r => r.h), v: l.map(r => r.v) }
   })
   if (!tracks.length) throw new Error('No trajectory rows')
-  const ei = Math.max(0, tracks.findIndex(t => /^ego$/i.test(t.id) || /ego/i.test(t.id)))
+  const ei = Math.max(0, tracks.findIndex(t => /ego|hero/i.test(t.id)))
   return { ego: tracks[ei], others: tracks.filter((_, i) => i !== ei) }
 }
 

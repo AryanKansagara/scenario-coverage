@@ -271,7 +271,7 @@ test('CARLA scenario_runner JSON: criteria become verdicts and attach by scenari
   assert.equal(detect('results.json', j), 'carla-json')
   const res = parseCarla(j)
   assert.equal(res[1].outcome, 'fail')
-  assert.equal(res[1].reason, 'CollisionTest: 1')
+  assert.equal(res[1].reason, 'CollisionTest: 1 (expected 0)')
   assert.equal(res[1].metrics.collision, true)
   const base: Run[] = [{ id: 'r1', scenario: 'FollowLeadingVehicle_1', params: {}, metrics: {} }, { id: 'r2', scenario: 'CutIn_2', params: {}, metrics: {} }]
   const a = attachResults(base, res)

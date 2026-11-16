@@ -117,11 +117,14 @@ export function recsToCsv(odd: Odd, recs: Rec[]): string {
   return toCsv([['id', ...odd.map(d => d.key), 'kind', 'reason'], ...recs.map(x => [x.id, ...odd.map(d => x.params[d.key] ?? ''), x.kind, x.reason])])
 }
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /** OpenSCENARIO 1.2 parameter value distribution: one ParameterValueSet per recommended run. */
 export function recsToXosc(odd: Odd, recs: Rec[], scenarioFile: string, date = new Date().toISOString().slice(0, 19)): string {
-  const sets = recs.map(x => `          <ParameterValueSet>\n${odd.map(d => `            <ParameterAssignment parameterRef="${esc(d.key)}" value="${esc(String(x.params[d.key] ?? ''))}"/>`).join('\n')}\n          </ParameterValueSet>`).join('\n')
+  // Dimensions that came from an .xosc carry the declared parameter name. When any do, only those are written:
+  // derived dimensions (init speeds, environment) are not parameters the scenario file declares.
+  const dims = odd.some(d => d.ref) ? odd.filter(d => d.ref) : odd
+  const sets = recs.map(x => `          <ParameterValueSet>\n${dims.filter(d => x.params[d.key] !== undefined).map(d => `            <ParameterAssignment parameterRef="${esc(d.ref ?? d.key)}" value="${esc(String(x.params[d.key]))}"/>`).join('\n')}\n          </ParameterValueSet>`).join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <OpenSCENARIO>
   <FileHeader revMajor="1" revMinor="2" date="${date}" description="Recommended scenarios (${recs.length})" author="Scenario Coverage"/>
