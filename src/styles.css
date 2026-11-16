@@ -616,3 +616,5 @@ details.panel summary { cursor: pointer; font-weight: 600; }
 .grid-2 > *, .grid-3 > * { min-width: 0; }
 @media (max-width: 720px) { .grid-2, .grid-3, .onboard { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 720px) { .replay-controls input[type='range'] { flex-basis: 100%; order: -1; } .replay-controls select { margin-left: auto; } }
+.docs a, .docs code { overflow-wrap: anywhere; }
+th.break { min-width: 12ch; }

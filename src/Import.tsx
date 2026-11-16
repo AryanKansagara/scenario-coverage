@@ -156,7 +156,7 @@ function XoscImport({ s, project, update, done }: { s: Extract<Staged, { kind: '
   const [label, setLabel] = useState(`Catalog ${today()}`)
   const [date, setDate] = useState(today())
   const odd = project.odd.length ? [...project.odd, ...suggested.filter(d => !project.odd.some(o => o.key === d.key))] : suggested
-  const show = (o: Record<string, unknown>, unit = '') => Object.entries(o).map(([k, v]) => `${k}=${v}${unit}`).join(', ') || '—'
+  const show = (o: Record<string, unknown>, unit = '') => Object.entries(o).map(([k, v]) => `${k}=${typeof v === 'number' ? Math.round(v * 100) / 100 : v}${unit}`).join(', ') || '—'
   return <>
     <p><b>{parsed.length} OpenSCENARIO file{parsed.length === 1 ? '' : 's'}</b> &rarr; <b>{runs.length} planned run{runs.length === 1 ? '' : 's'}</b>. A scenario file is one run; a parameter value distribution is one run per enumerated set. No verdict until results arrive: attach CARLA results or a result table later.</p>
     {errors.map(e => <p key={e} className="error small">{e}</p>)}
