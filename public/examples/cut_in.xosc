@@ -4,19 +4,17 @@
   <FileHeader revMajor="1" revMinor="2" date="2026-10-01T00:00:00" description="Highway cut-in, synthetic example" author="Scenario Coverage example"/>
   <ParameterDeclarations>
     <ParameterDeclaration name="ego_speed" parameterType="double" value="88">
-      <ConstraintGroup><ValueConstraint rule="greaterOrEqual" value="0"/></ConstraintGroup>
-      <Range lowerLimit="60" upperLimit="105"/>
+      <ConstraintGroup><ValueConstraint rule="greaterOrEqual" value="60"/><ValueConstraint rule="lessOrEqual" value="105"/></ConstraintGroup>
     </ParameterDeclaration>
     <ParameterDeclaration name="gap" parameterType="double" value="9">
-      <Range lowerLimit="5" upperLimit="60"/>
+      <ConstraintGroup><ValueConstraint rule="greaterOrEqual" value="5"/><ValueConstraint rule="lessOrEqual" value="60"/></ConstraintGroup>
     </ParameterDeclaration>
     <ParameterDeclaration name="rel_speed" parameterType="double" value="-8">
-      <Range lowerLimit="-30" upperLimit="10"/>
+      <ConstraintGroup><ValueConstraint rule="greaterOrEqual" value="-30"/><ValueConstraint rule="lessOrEqual" value="10"/></ConstraintGroup>
     </ParameterDeclaration>
     <ParameterDeclaration name="weather" parameterType="string" value="clear"/>
     <ParameterDeclaration name="lighting" parameterType="string" value="dusk"/>
-    <ParameterDeclaration name="EgoSpeedMps" parameterType="double" value="24.4"/>
-  </ParameterDeclarations>
+      </ParameterDeclarations>
   <CatalogLocations/>
   <RoadNetwork><LogicFile filepath="straight_3lane_2km.xodr"/></RoadNetwork>
   <Entities>
@@ -25,8 +23,13 @@
   </Entities>
   <Storyboard>
     <Init><Actions>
-      <Private entityRef="Ego"><PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="$EgoSpeedMps"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>
-      <Private entityRef="CutInCar"><PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="22.2"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>
+      <GlobalAction><EnvironmentAction><Environment name="Dusk, dry">
+        <TimeOfDay animation="false" dateTime="2026-10-01T18:15:00"/>
+        <Weather cloudState="cloudy"><Sun intensity="0.3" azimuth="4.6" elevation="0.1"/><Fog visualRange="8000"/><Precipitation precipitationType="dry" intensity="0"/></Weather>
+        <RoadCondition frictionScaleFactor="1.0"/>
+      </Environment></EnvironmentAction></GlobalAction>
+      <Private entityRef="Ego"><PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="${$ego_speed / 3.6}"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>
+      <Private entityRef="CutInCar"><PrivateAction><LongitudinalAction><SpeedAction><SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time"/><SpeedActionTarget><AbsoluteTargetSpeed value="${($ego_speed + $rel_speed) / 3.6}"/></SpeedActionTarget></SpeedAction></LongitudinalAction></PrivateAction></Private>
     </Actions></Init>
     <Story name="CutInStory"/>
     <StopTrigger/>

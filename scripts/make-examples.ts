@@ -18,12 +18,15 @@ params.forEach((p, i) => {
   rows.push([id, `${p.event}_${p.road}`, p.event, p.weather, p.lighting, p.road, p.ego_speed, p.gap, p.rel_speed,
     planned ? '' : m.ttc ?? '', planned ? '' : m.minDist ?? '', planned ? '' : m.maxDecel ?? '', planned ? '' : String(!!m.collision), planned ? '' : fail ? 'fail' : 'pass'])
   if (i < 3) for (const r of sim) traj.push([id, r.t, r.id, Math.round(r.x * 100) / 100, Math.round(r.y * 1000) / 1000, Math.round((r.h * 180) / Math.PI * 100) / 100, Math.round(r.v * 100) / 100, r.len ?? '', r.wid ?? ''])
+  // Same layout as scenario_runner --json: boolean success per criterion plus a closing Duration entry.
+  const actor = 'tesla.cybertruck-221', dur = Math.round((sim.at(-1)?.t ?? 0) * 100) / 100
   if (planned) carla.push({ scenario: id, success: !m.collision, criteria: [
-    { name: 'CollisionTest', actor: 'vehicle.tesla.cybertruck (id=221)', optional: false, expected: '0', actual: m.collision ? '1' : '0', result: m.collision ? 'FAILURE' : 'SUCCESS' },
-    { name: 'RouteCompletionTest', actor: 'vehicle.tesla.cybertruck (id=221)', optional: false, expected: '100 %', actual: m.collision ? '41 %' : '100 %', result: m.collision ? 'FAILURE' : 'SUCCESS' },
+    { name: 'CollisionTest', actor, optional: false, expected: 0, actual: m.collision ? 1 : 0, success: !m.collision },
+    { name: 'KeepLaneTest', actor, optional: true, expected: 0, actual: 0, success: true },
+    { name: 'Duration', actor: 'all', optional: false, expected: 60, actual: dur, success: dur <= 60 },
   ] })
 })
 writeFileSync(new URL('scenario_runs.csv', dir), toCsv(rows))
 writeFileSync(new URL('trajectory_run.csv', dir), toCsv(traj))
-writeFileSync(new URL('carla_results.json', dir), JSON.stringify(carla, null, 1))
+writeFileSync(new URL('carla_results.json', dir), JSON.stringify(carla, null, 4))
 console.log('wrote', rows.length - 1, 'runs,', traj.length - 1, 'trajectory rows,', carla.length, 'CARLA results')

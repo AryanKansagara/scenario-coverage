@@ -50,8 +50,9 @@ export default function DataTab({ project, traj, update }: Props) {
   }
 
   const loadExample = async (name: string) => {
-    const r = await fetch(`/examples/${name}`)
-    await load([new File([await r.text()], name)])
+    // The sweep is a parameter value distribution, so it is loaded together with the scenario it varies.
+    const names = name === 'cut_in_sweep.xosc' ? [name, 'cut_in.xosc'] : [name]
+    await load(await Promise.all(names.map(async n => new File([await (await fetch(`/examples/${n}`)).text()], n))))
   }
 
   return (
@@ -71,7 +72,7 @@ export default function DataTab({ project, traj, update }: Props) {
             <p className="muted small">{Object.values(FORMATS).join(' · ')}. Several .xosc, result or trajectory files at once are fine; drop a parameter value distribution together with its scenario file.</p>
             <input ref={input} type="file" multiple hidden accept=".csv,.tsv,.txt,.json,.xosc,.xml" onChange={e => { if (e.target.files) void load(e.target.files); e.target.value = '' }} />
           </div>
-          <p className="muted small">Example files: {['scenario_runs.csv', 'cut_in.xosc', 'carla_results.json', 'trajectory_run.csv'].map((f, i) => <span key={f}>{i ? ' · ' : ''}<button type="button" className="linkish" onClick={() => void loadExample(f)}>{f}</button> <a href={`/examples/${f}`} download aria-label={`Download ${f}`}>&darr;</a></span>)}</p>
+          <p className="muted small">Example files: {['scenario_runs.csv', 'cut_in.xosc', 'cut_in_sweep.xosc', 'carla_results.json', 'trajectory_run.csv'].map((f, i) => <span key={f}>{i ? ' · ' : ''}<button type="button" className="linkish" onClick={() => void loadExample(f)}>{f}</button> <a href={`/examples/${f}`} download aria-label={`Download ${f}`}>&darr;</a></span>)}</p>
           {err && <p className="error" role="alert">{err}</p>}
         </> : staged.kind === 'table' ? <TableImport s={staged} setS={setStaged} project={project} update={update} done={() => setStaged(null)} />
           : staged.kind === 'xosc' ? <XoscImport s={staged} project={project} update={update} done={() => setStaged(null)} />

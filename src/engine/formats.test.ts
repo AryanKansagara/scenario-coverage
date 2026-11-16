@@ -314,3 +314,14 @@ test('the ego is found by CARLA role name, and camelCase names read as words', (
 test('a trajectory file with no usable rows is rejected with a reason', () => {
   assert.throws(() => parseTrajectories('time,actor_id,x,y,heading\n,ego,1,1,0\n', 'r'), /No usable trajectory rows/)
 })
+
+test('derived dimensions that never vary in a batch are left out of the suggested ODD', () => {
+  const b = xoscRuns([{ name: 'cut-in_parameter_set.xosc', text: PARAM_SET }, { name: 'cut-in.xosc', text: CUT_IN }])
+  const keys = xoscOdd(b.parsed.map(p => p.x), b.runs).map(d => d.key)
+  // Every run uses the same road network; the two init speeds do vary with EgoSpeed.
+  assert.ok(!keys.includes('road_network'))
+  assert.ok(keys.includes('ego_init_speed') && keys.includes('overtaker_init_speed'))
+  // Declared parameters stay even when constant, so exports can still assign them.
+  assert.ok(keys.includes('egostarts'))
+  assert.equal(b.runs[0].params.road_network, 'e6mini')
+})

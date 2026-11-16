@@ -397,7 +397,10 @@ export function xoscOdd(list: Xosc[], runs: Run[]): Odd {
   const declared = new Map<string, string>()
   for (const x of list) for (const k of [...Object.keys(x.params), ...Object.keys(x.ranges), ...(x.dist?.sets.flatMap(s => Object.keys(s)) ?? [])]) if (!declared.has(norm(k))) declared.set(norm(k), k)
   for (const k of declared.keys()) if (!keys.includes(k) && list.some(x => Object.keys(x.ranges).some(r => norm(r) === k))) keys.push(k)
-  return keys.map((key): OddParam => {
+  // Environment and speed values that never vary across the batch say nothing about coverage; the runs keep them,
+  // and the dimension can be added on the ODD editor once another campaign varies it.
+  const constant = (key: string) => runs.length > 1 && !declared.has(key) && new Set(runs.map(r => String(r.params[key]))).size === 1
+  return keys.filter(key => !constant(key)).map((key): OddParam => {
     const vals = runs.map(r => r.params[key]).filter(v => v !== undefined)
     const range = list.map(x => Object.entries(x.ranges).find(([k]) => norm(k) === key)?.[1]).find(Boolean)
     const ref = declared.get(key)
