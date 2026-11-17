@@ -289,7 +289,7 @@ export function Footer() {
       <div className="footer-inner">
         <div className="footer-brand"><Monogram /> <strong>Scenario Coverage</strong></div>
         <nav className="footer-nav" aria-label="Footer"><Link href="/app">Projects</Link><Link href="/docs">Docs</Link><Link href="/settings">Settings</Link></nav>
-        <p>Built by Aryan Kansagara. Independent project, not affiliated with Waabi.</p>
+        <p>Built by Aryan Kansagara.</p>
         <p className="muted small">The sample campaign is synthetic. Your scenario files and results are processed in your browser and stored on this device unless you sign in to sync.</p>
       </div>
     </footer>
