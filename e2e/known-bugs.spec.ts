@@ -147,11 +147,19 @@ bug(11, 'dropping two tables does not silently lose one', async ({ page }) => {
   await expect(page.locator('.data-tab')).toContainText('b.csv', soon)
 })
 
-bug(12, 'a JSON table with a success column keeps its parameters', async ({ page }) => {
+test('#12 a JSON table with a success column keeps its parameters', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'r.json', text: JSON.stringify([{ id: 'a', weather: 'rain', light: 'day', success: true }, { id: 'b', weather: 'dry', light: 'night', success: false }]) })
   await expect(page.getByText('Scenario parameter table (JSON)')).toBeVisible(soon)
   await page.getByRole('button', { name: /^Import 2 runs/ }).click(soon)
+  await expect(kpi(page, 'Failure rate')).toContainText('1 of 2 judged runs')
+})
+
+test('#12 a bad first JSON record is skipped', async ({ page }) => {
+  await newProject(page)
+  await drop(page, { name: 'r.json', text: JSON.stringify([{ id: 'x', weather: 'rain', gap: 'fast' }, ...[...Array(12)].map((_, i) => ({ id: `r${i}`, weather: i % 2 ? 'rain' : 'dry', gap: i }))]) })
+  await page.getByRole('button', { name: 'Import 12 runs (skip 1)' }).click(soon)
+  await expect(page.locator('.kpis').first()).toBeVisible()
 })
 
 bug(13, 'exports do not carry spreadsheet formulas', async ({ page }) => {

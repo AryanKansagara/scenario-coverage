@@ -11,7 +11,7 @@ export const FORMATS: Record<Format, string> = {
   'trajectory-csv': 'Per-run trajectories (CSV)',
 }
 
-export interface Issue { line: number; level: 'error' | 'warning'; message: string }
+export interface Issue { line: number; level: 'error' | 'warning'; message: string; /** Stops the whole import, not just one row. */ blocks?: true }
 
 export const norm = (h: string) => h.trim().toLowerCase().replace(/^"|"$/g, '').replace(/[\s\-.()/]+/g, '_').replace(/_+$/, '')
 
@@ -24,13 +24,29 @@ export function detect(fileName: string, text: string): Format {
   if (/\.xosc$/i.test(fileName) || /<OpenSCENARIO[\s>]/.test(head)) return 'xosc'
   const t = head.trimStart()
   if (t.startsWith('{') || t.startsWith('[')) {
-    if (/"criteria"\s*:|"_checkpoint"\s*:|"scenario_runner"|"success"\s*:\s*(true|false)/.test(text.slice(0, 20000))) return 'carla-json'
-    return 'param-json'
+    return isCarla(text) ? 'carla-json' : 'param-json'
   }
   if (/#1 World_Position_X/.test(head)) return 'trajectory-csv'
   const top = parseCsv(head.split(/\r?\n/).slice(0, 4).join('\n')).rows.slice(0, 3)
   if (top.some(isTrajHeader)) return 'trajectory-csv'
   return 'param-csv'
+}
+
+/** Fields a result record can have besides its verdict that are not parameters. */
+const RUN_INFO = /^(criteria|timeout|timestamp|date|(start|end)_time|duration(_\w+)?)$/
+
+/** Whether a JSON file holds CARLA results rather than a parameter table. */
+function isCarla(text: string): boolean {
+  let data: unknown
+  try { data = JSON.parse(text) } catch { return /"criteria"\s*:|"_checkpoint"\s*:|"scenario_runner"|"success"\s*:\s*(true|false)/.test(text.slice(0, 20000)) }
+  const obj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
+  if (obj(data) && ('_checkpoint' in data || 'scenario_runner' in data)) return true
+  const list = (Array.isArray(data) ? data : jsonRecords(data) ?? [data]).filter(obj)
+  if (list.some(r => Array.isArray(r.criteria))) return true
+  if (!list.some(r => typeof r.success === 'boolean')) return false
+  // A verdict without criteria: a table when the records carry parameters, else bare results.
+  const known = new Set(Object.values(ALIASES).flat())
+  return flatten(list).headers.map(norm).every(h => !h || known.has(h) || RUN_INFO.test(h))
 }
 
 // ---------- Parameter tables ----------
@@ -144,13 +160,13 @@ export function validateTable(headers: string[], rows: string[][], lines: number
   const signed = new Set<number>()
   const byKey = new Map(odd.map(d => [d.key, d]))
   let skipped = 0
-  if (!map.includes('param')) issues.push({ line: 1, level: 'error', message: 'No column is mapped to an ODD parameter, so there is nothing to measure coverage on.' })
+  if (!map.includes('param')) issues.push({ line: 1, level: 'error', blocks: true, message: 'No column is mapped to an ODD parameter, so there is nothing to measure coverage on.' })
   const taken = new Map<string, string>()
   headers.forEach((h, c) => {
     if (map[c] !== 'param') return
     const first = taken.get(norm(h))
     if (first === undefined) taken.set(norm(h), h)
-    else issues.push({ line: 1, level: 'error', message: `Columns "${first}" and "${h}" are the same parameter (${norm(h)}). Set one of them to Ignore.` })
+    else issues.push({ line: 1, level: 'error', blocks: true, message: `Columns "${first}" and "${h}" are the same parameter (${norm(h)}). Set one of them to Ignore.` })
   })
   rows.forEach((row, ri) => {
     const line = lines[ri]
@@ -207,8 +223,18 @@ export function validateTable(headers: string[], rows: string[][], lines: number
 /** Flattens a JSON array of objects (or { runs: [...] }) into a header row plus string rows. */
 export function jsonTable(text: string): { headers: string[]; rows: string[][]; lines: number[] } {
   const data = JSON.parse(text)
-  const list: unknown[] = Array.isArray(data) ? data : Array.isArray(data?.runs) ? data.runs : Array.isArray(data?.scenarios) ? data.scenarios : []
+  const list: unknown[] = jsonRecords(data) ?? []
   if (!list.length) throw new Error('Expected a JSON array of runs, or an object with a "runs" or "scenarios" array.')
+  return flatten(list)
+}
+
+function jsonRecords(data: unknown): unknown[] | undefined {
+  if (Array.isArray(data)) return data
+  const o = data as { runs?: unknown; scenarios?: unknown } | null
+  return Array.isArray(o?.runs) ? o.runs : Array.isArray(o?.scenarios) ? o.scenarios : undefined
+}
+
+function flatten(list: unknown[]): { headers: string[]; rows: string[][]; lines: number[] } {
   const flat = list.map(o => {
     const out: Record<string, string> = {}
     const walk = (v: unknown, pre: string) => {
