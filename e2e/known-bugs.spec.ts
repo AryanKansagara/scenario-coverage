@@ -141,10 +141,24 @@ test('#10 a truncated .xosc is refused', async ({ page }) => {
   await expect(page.locator('.error')).toContainText('x.xosc: The file is damaged or cut off')
 })
 
-bug(11, 'dropping two tables does not silently lose one', async ({ page }) => {
+test('#11 dropping two tables does not silently lose one', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'a.csv', text: 'run_id,weather,light\na,rain,day\n' }, { name: 'b.csv', text: 'run_id,weather,light\nb,dry,night\n' })
-  await expect(page.locator('.data-tab')).toContainText('b.csv', soon)
+  await expect(page.locator('.data-tab')).toContainText('Not part of this import: b.csv. Tables are imported one at a time.', soon)
+  await expect(page.getByRole('button', { name: 'Import 1 runs' })).toBeEnabled()
+})
+
+test('#11 a drop that mixes formats names what it leaves out, and a failed one which file failed', async ({ page }) => {
+  await newProject(page)
+  const t = (id: string) => `run_id,time,actor_id,x,y,heading_rad,speed\n${id},0,ego,0,0,0,10\n${id},1,ego,10,0,0,10\n`
+  await drop(page, { name: 't1.csv', text: t('T1') }, { name: 'runs.csv', text: 'run_id,weather,light\nb,dry,night\n' }, { name: 't2.csv', text: t('T2') })
+  await expect(page.getByText('t1.csv, t2.csv · 2 runs')).toBeVisible(soon)
+  await expect(page.getByRole('status').filter({ hasText: 'Not part of this import: runs.csv.' })).toBeVisible(soon)
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await drop(page, { name: 't1.csv', text: t('T1') }, { name: 't2.csv', text: 'run_id,time,actor_id,x,y,heading_rad,speed\nT2,,ego,0,0,0,10\n' })
+  await expect(page.getByRole('alert')).toContainText('Could not read t2.csv: No usable trajectory rows')
+  await expect(page.getByRole('alert')).toContainText('None of the 2 files was imported.')
+  await expect(page.getByText('Not part of this import')).toHaveCount(0)
 })
 
 test('#12 a JSON table with a success column keeps its parameters', async ({ page }) => {

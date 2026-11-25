@@ -32,6 +32,20 @@ export function detect(fileName: string, text: string): Format {
   return 'param-csv'
 }
 
+/**
+ * The files of one drop that can be imported together: those of the first file's format, and of tables the first only,
+ * because each has its own column mapping. The notice names every file left out.
+ */
+export function pickFiles(files: { name: string; text: string }[]): { format: Format; take: number[]; notice: string } {
+  const formats = files.map(f => detect(f.name, f.text))
+  const format = formats[0], table = format === 'param-csv' || format === 'param-json'
+  const take = files.map((_, i) => i).filter(i => table ? i === 0 : formats[i] === format)
+  const rest = files.filter((_, i) => !take.includes(i)).map(f => f.name)
+  if (!rest.length) return { format, take, notice: '' }
+  const why = table ? 'Tables are imported one at a time' : `The other files of this drop were read as: ${FORMATS[format]}`
+  return { format, take, notice: `Not part of this import: ${rest.join(', ')}. ${why}. Drop ${rest.length === 1 ? 'it' : 'them'} again afterwards.` }
+}
+
 /** Fields a result record can have besides its verdict that are not parameters. */
 const RUN_INFO = /^(criteria|timeout|timestamp|date|(start|end)_time|duration(_\w+)?)$/
 

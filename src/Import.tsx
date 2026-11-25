@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { csvTable } from './engine/parse.ts'
 import { formatList, parseList } from './engine/csv.ts'
 import { computeMetrics, toTracks } from './engine/metrics.ts'
-import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
+import { attachResults, autoMap, FORMATS, inferOdd, jsonTable, norm, pickFiles, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
 import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
 import { wholeBins } from './engine/coverage.ts'
 import { createSampleProject } from './projectData.ts'
@@ -25,31 +25,38 @@ const ROLES: Role[] = ['param', 'id', 'scenario', 'outcome', 'reason', 'ttc', 'p
 export default function DataTab({ project, traj, update }: Props) {
   const [staged, setStaged] = useState<Staged | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [left, setLeft] = useState('')
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const empty = !project.campaigns.some(c => c.runs.length)
 
   const load = async (files: FileList | File[]) => {
     setErr(null)
-    const list = [...files]
-    if (!list.length) return
+    setLeft('')
+    const all = [...files]
+    if (!all.length) return
+    let list = all, reading = all[0].name
     try {
-      const texts = await Promise.all(list.map(f => f.text()))
-      const fmt = detect(list[0].name, texts[0])
+      const every = await Promise.all(all.map(f => f.text()))
+      const { format: fmt, take, notice } = pickFiles(all.map((f, i) => ({ name: f.name, text: every[i] })))
+      list = take.map(i => all[i])
+      const texts = take.map(i => every[i])
+      const each = <T,>(read: (name: string, text: string) => T) => list.map((f, i) => { reading = f.name; return read(f.name, texts[i]) })
       if (fmt === 'xosc') {
         setStaged({ kind: 'xosc', batch: xoscRuns(list.map((f, i) => ({ name: f.name, text: texts[i] }))) })
-      } else if (fmt === 'carla-json') setStaged({ kind: 'carla', fileName: list.length > 1 ? `${list[0].name} + ${list.length - 1} more` : list[0].name, results: list.flatMap((_, i) => parseCarla(texts[i])) })
+      } else if (fmt === 'carla-json') setStaged({ kind: 'carla', fileName: list.length > 1 ? `${list[0].name} + ${list.length - 1} more` : list[0].name, results: each((_, text) => parseCarla(text)).flat() })
       else if (fmt === 'trajectory-csv') {
         const byRun = new Map<string, TrajRow[]>(), issues: Issue[] = []
         const headings = new Set<string>()
-        list.forEach((f, i) => { const t = parseTrajectories(texts[i], f.name.replace(/\.[^.]+$/, '')); t.byRun.forEach((v, k) => byRun.set(k, [...(byRun.get(k) ?? []), ...v])); issues.push(...t.issues.map(x => ({ ...x, message: list.length > 1 ? `${f.name}: ${x.message}` : x.message }))); headings.add(t.derived ? 'derived from positions' : t.degrees ? 'in degrees (converted)' : 'in radians') })
+        each((name, text) => { const t = parseTrajectories(text, name.replace(/\.[^.]+$/, '')); t.byRun.forEach((v, k) => byRun.set(k, [...(byRun.get(k) ?? []), ...v])); issues.push(...t.issues.map(x => ({ ...x, message: list.length > 1 ? `${name}: ${x.message}` : x.message }))); headings.add(t.derived ? 'derived from positions' : t.degrees ? 'in degrees (converted)' : 'in radians') })
         setStaged({ kind: 'traj', fileName: list.map(f => f.name).join(', '), byRun, issues, headings: [...headings].join(' and ') })
       } else {
         const t = fmt === 'param-json' ? jsonTable(texts[0]) : csvTable(texts[0])
         if (!t.headers.length || !t.rows.length) throw new Error('The file has a header but no data rows.')
         setStaged({ kind: 'table', format: fmt, fileName: list[0].name, ...t, map: autoMap(t.headers) })
       }
-    } catch (e) { setErr(`Could not read ${list[0].name}: ${(e as Error).message}`) }
+      setLeft(notice)
+    } catch (e) { setErr(`Could not read ${reading}: ${(e as Error).message}${all.length > 1 ? ` None of the ${all.length} files was imported.` : ''}`) }
   }
 
   const loadExample = async (name: string) => {
@@ -68,11 +75,12 @@ export default function DataTab({ project, traj, update }: Props) {
       )}
       <div className="panel">
         <div className="panel-head"><h2>Import</h2><Link href="/docs" className="small">How to export from your simulator &rarr;</Link></div>
+        {staged && left && <p className="warn-text small" role="status">{left}</p>}
         {!staged ? <>
           <div className={`drop${over ? ' over' : ''}`} role="button" tabIndex={0} onClick={() => input.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.current?.click() } }}
             onDragOver={e => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)} onDrop={e => { e.preventDefault(); setOver(false); void load(e.dataTransfer.files) }}>
             <h3>Drop files here, or click to choose</h3>
-            <p className="muted small">{Object.values(FORMATS).join(' · ')}. Several .xosc, result or trajectory files at once are fine; drop a parameter value distribution together with its scenario file.</p>
+            <p className="muted small">{Object.values(FORMATS).join(' · ')}. Several .xosc, result or trajectory files at once are fine, tables go one at a time; drop a parameter value distribution together with its scenario file.</p>
             <input ref={input} type="file" multiple hidden accept=".csv,.tsv,.txt,.json,.xosc,.xml" onChange={e => { if (e.target.files) void load(e.target.files); e.target.value = '' }} />
           </div>
           <p className="muted small">Example files: {['scenario_runs.csv', 'cut_in.xosc', 'cut_in_sweep.xosc', 'carla_results.json', 'trajectory_run.csv'].map((f, i) => <span key={f}>{i ? ' · ' : ''}<button type="button" className="linkish" onClick={() => void loadExample(f)}>{f}</button> <a href={`/examples/${f}`} download aria-label={`Download ${f}`}>&darr;</a></span>)}</p>
