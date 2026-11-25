@@ -38,7 +38,7 @@ bug(3, 'table: braking and lane offset with a minus sign are judged by size', as
   await expect(kpi(page, 'Failure rate')).toContainText('2 of 3 judged runs', soon)
 })
 
-bug(4, 'trajectories change one campaign only', async ({ page }) => {
+test('#4 trajectories change one campaign only', async ({ page }) => {
   await newProject(page)
   const t = 'run_id,weather,light,min_ttc\na,rain,day,4\nb,dry,night,4\n'
   await importTable(page, 'r.csv', t, { label: 'One', date: '2026-01-01' })
@@ -48,11 +48,11 @@ bug(4, 'trajectories change one campaign only', async ({ page }) => {
   await drop(page, { name: 't.csv', text: 'run_id,time,actor_id,x,y,heading_rad,speed,length,width\na,0,ego,0,0,0,10,4.8,1.9\na,0,car,10,0,0,0,4.8,1.9\na,1,ego,10,0,0,10,4.8,1.9\na,1,car,10,0,0,0,4.8,1.9\n' })
   await page.getByRole('button', { name: 'Compute metrics and save' }).click()
   await section(page, 'History')
-  await expect(page.getByRole('row', { name: /^One / })).toContainText('100.0%0.0%', soon)
-  await expect(page.getByRole('row', { name: /^Two / })).toContainText('100.0%50.0%', soon)
+  await expect(page.getByRole('row', { name: /^One / })).toContainText('50.0%0.0%', soon)
+  await expect(page.getByRole('row', { name: /^Two / })).toContainText('50.0%50.0%', soon)
 })
 
-bug(4, 'a run id used in two campaigns keeps its own verdict', async ({ page }) => {
+test('#4 a run id used in two campaigns keeps its own verdict', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,min_ttc\na,rain,day,1\nb,dry,night,4\n', { label: 'One', date: '2026-01-01' })
   await section(page, 'Data & ODD')

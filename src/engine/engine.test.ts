@@ -5,6 +5,7 @@ import { binOf, coverage, findGaps, judge } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
 import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
 import { parseCsv } from './csv.ts'
+import { freeTrajKey, trajTargets } from './parse.ts'
 import { recommend, recsToCsv, recsToXosc } from './recommend.ts'
 import { DEFAULT_THRESHOLDS, simulate } from './sample.ts'
 import type { Odd, Run, TrajRow } from './types.ts'
@@ -316,4 +317,20 @@ test('trajectory CSV: multi-run files split by run id, degrees converted, speeds
   assert.ok(Math.abs(t.byRun.get('A')![2].h + Math.PI / 2) < 1e-9)
   assert.equal(t.byRun.get('A')![0].v, 20)
   assert.equal(t.issues.filter(i => i.level === 'error')[0].line, 6)
+})
+
+test('trajectories go to one campaign and never replace another campaign\'s trajectory', () => {
+  const run = (id: string, extra: Partial<Run> = {}): Run => ({ id, scenario: id, params: {}, metrics: {}, ...extra })
+  const one = { id: 'c1', label: 'One', date: '2026-01-01', runs: [run('a', { traj: true }), run('only1')] }
+  const two = { id: 'c2', label: 'Two', date: '2026-02-01', runs: [run('a'), run('b')] }
+  const t = trajTargets([one, two], ['a', 'b', 'only1', 'new'])
+  assert.deepEqual([...t.target], [['a', 'c2'], ['b', 'c2'], ['only1', 'c1']])
+  assert.deepEqual(t.shared, ['a'])
+  assert.equal(trajTargets([one, two], ['a', 'b'], 'c1').target.get('a'), 'c1')
+  assert.equal(freeTrajKey([one, two], 'c2', two.runs[0]), 'c2:a')
+  assert.equal(freeTrajKey([one, two], 'c1', one.runs[0]), 'a')
+  assert.equal(freeTrajKey([one, two], 'c2', two.runs[1]), 'b')
+  // Projects saved before this fix: both runs point at one trajectory.
+  const both = [{ ...one }, { ...two, runs: [run('a', { traj: true })] }]
+  assert.equal(freeTrajKey(both, 'c2', both[1].runs[0]), 'c2:a')
 })
