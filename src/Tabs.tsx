@@ -40,12 +40,15 @@ function defaultPair(a: TabProps['a']) {
 
 function PairSelect({ p, value, onChange }: { p: TabProps; value: number; onChange(i: number): void }) {
   const odd = p.project.odd
+  if (!p.a.cov.pairs.length) return null
   return (
     <select value={value} onChange={e => onChange(Number(e.target.value))} aria-label="Parameter pair">
       {p.a.cov.pairs.map((x, i) => <option key={i} value={i}>{odd[x.a].label} × {odd[x.b].label} ({Math.round((x.covered / x.total) * 100)}%)</option>)}
     </select>
   )
 }
+
+const OnePair = () => <p className="muted">Pairs need at least two ODD parameters. Add one on the Data &amp; ODD tab; 1-way coverage is measured meanwhile.</p>
 
 // ---------- Overview ----------
 
@@ -58,7 +61,7 @@ function Overview(p: TabProps) {
   return (
     <>
       <div className="kpis">
-        <div className="kpi"><small>Pairwise ODD coverage</small><b>{fmtPct(a.cov.pairwisePct, 1)}</b><Meter value={a.cov.pairwisePct} label="Pairwise coverage" /><p>{fmtN(a.cov.coveredCells)} of {fmtN(a.cov.totalCells)} 2-way cells</p></div>
+        <div className="kpi"><small>Pairwise ODD coverage</small><b>{a.cov.totalCells ? fmtPct(a.cov.pairwisePct, 1) : '—'}</b><Meter value={a.cov.pairwisePct} label="Pairwise coverage" /><p>{fmtN(a.cov.coveredCells)} of {fmtN(a.cov.totalCells)} 2-way cells</p></div>
         <div className="kpi"><small>1-way coverage</small><b>{fmtPct(a.cov.oneWayPct, 1)}</b><Meter value={a.cov.oneWayPct} label="1-way coverage" /><p>every bin of every parameter</p></div>
         <div className="kpi"><small>Failure rate</small><b>{judged ? fmtPct(a.fails / judged, 1) : '—'}</b><p>{fmtN(a.fails)} of {fmtN(judged)} judged runs{a.untested ? ` · ${a.untested} not run yet` : ''}</p></div>
         <div className="kpi"><small>Untested 2-way gaps</small><b>{fmtN(a.gaps.length)}</b><p>{a.cov.outside ? `${a.cov.outside} runs outside the ODD` : 'all runs inside the ODD'}</p></div>
@@ -67,7 +70,7 @@ function Overview(p: TabProps) {
       <div className="grid-2">
         <div className="panel">
           <div className="panel-head"><h2>Coverage map</h2><PairSelect p={p} value={pair} onChange={setPair} /></div>
-          <Heatmap odd={project.odd} pair={a.cov.pairs[pair]} />
+          {a.cov.pairs[pair] ? <Heatmap odd={project.odd} pair={a.cov.pairs[pair]} /> : <OnePair />}
           <HeatLegend />
         </div>
         <div className="panel">
@@ -78,7 +81,7 @@ function Overview(p: TabProps) {
             </ol>
           ) : <p className="muted">{a.fails ? 'Failures are spread out; no single region explains them.' : a.untested === a.runs.length ? 'No run in this scope has a result yet.' : 'No failures in this scope.'}</p>}
           <h3 className="mt">Riskiest untested combinations</h3>
-          {a.gaps.length ? <ul className="gap-list">{a.gaps.slice(0, 5).map(g => <li key={g.text}>{g.text}</li>)}</ul> : <p className="muted small">Every 2-way combination has at least one run.</p>}
+          {a.gaps.length ? <ul className="gap-list">{a.gaps.slice(0, 5).map(g => <li key={g.text}>{g.text}</li>)}</ul> : <p className="muted small">{a.cov.totalCells ? 'Every 2-way combination has at least one run.' : 'No parameter pairs to combine.'}</p>}
           <Link href={tabHref(p, 'next')} className="btn primary sm">Recommend next scenarios</Link>
         </div>
       </div>
@@ -105,7 +108,7 @@ function CoverageTab(p: TabProps) {
   const [pair, setPair] = useState(() => defaultPair(a))
   const [cell, setCell] = useState<[number, number] | null>(null)
   const P = a.cov.pairs[pair]
-  const A = project.odd[P.a], B = project.odd[P.b]
+  const A = project.odd[P?.a], B = project.odd[P?.b]
   const cellRuns = cell ? a.runs.filter(r => binOf(A, r.params[A.key]) === cell[0] && binOf(B, r.params[B.key]) === cell[1]) : []
   const gapCsv = () => toCsv([['parameter_a', 'bin_a', 'parameter_b', 'bin_b', 'priority'], ...a.gaps.map(g => [g.a, a.cov.oneWay[project.odd.findIndex(d => d.key === g.a)].labels[g.ai], g.b, a.cov.oneWay[project.odd.findIndex(d => d.key === g.b)].labels[g.bi], Math.round(g.priority * 100) / 100])])
   return (
@@ -132,7 +135,8 @@ function CoverageTab(p: TabProps) {
         </div>
       </div>
 
-      <div className="panel">
+      {!P && <div className="panel"><h2>Pairwise (2-way) coverage</h2><OnePair /></div>}
+      {P && <><div className="panel">
         <div className="panel-head"><h2>Pairwise (2-way) coverage</h2><span className="muted small">Every pair of ODD parameters; click one to inspect</span></div>
         <div className="pair-grid">
           {a.cov.pairs.map((x, i) => (
@@ -163,7 +167,7 @@ function CoverageTab(p: TabProps) {
             {a.gaps.length ? <ol className="gap-list scroll">{a.gaps.slice(0, 60).map(g => <li key={g.text}>{g.text}</li>)}</ol> : <p>Full pairwise coverage.</p>}
           </>}
         </div>
-      </div>
+      </div></>}
     </>
   )
 }
@@ -322,8 +326,8 @@ function NextTab(p: TabProps) {
           </div>
         </div>
         <div className="kpis three">
-          <div className="kpi"><small>Pairwise coverage now</small><b>{fmtPct(a.cov.pairwisePct, 1)}</b></div>
-          <div className="kpi"><small>After these {recs.length} runs</small><b className="good-text">{fmtPct(after.pairwisePct, 1)}</b><p>{signed((after.pairwisePct - a.cov.pairwisePct) * 100, x => x.toFixed(1))} points</p></div>
+          <div className="kpi"><small>Pairwise coverage now</small><b>{a.cov.totalCells ? fmtPct(a.cov.pairwisePct, 1) : '—'}</b></div>
+          <div className="kpi"><small>After these {recs.length} runs</small><b className="good-text">{after.totalCells ? fmtPct(after.pairwisePct, 1) : '—'}</b><p>{signed((after.pairwisePct - a.cov.pairwisePct) * 100, x => x.toFixed(1))} points</p></div>
           <div className="kpi"><small>Boundary probes</small><b>{recs.filter(r => r.kind === 'boundary').length}</b><p>between failing runs and their nearest passing neighbour</p></div>
         </div>
         <div className="row gap wrap">

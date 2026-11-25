@@ -62,22 +62,29 @@ test('#4 a run id used in two campaigns keeps its own verdict', async ({ page })
   await expect(page.locator('.table-wrap .badge')).toHaveText(['fail', 'pass'], soon)
 })
 
-bug(5, 'a project with one ODD parameter opens', async ({ page }) => {
+test('#5 a project with one ODD parameter opens', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'r.csv', text: 'run_id,weather,min_ttc\na,rain,1\nb,dry,4\n' })
   await page.getByRole('button', { name: /^Import 2 runs/ }).click()
   await expect(kpi(page, '1-way coverage').locator('b')).toHaveText('100.0%', soon)
   await section(page, 'Coverage')
   await expect(page.locator('.ow')).toHaveCount(1, soon)
+  for (const tab of ['Failures', 'Replay', 'Next scenarios', 'History', 'Overview']) { await section(page, tab); await expect(page.locator('.panel').first()).toBeVisible(soon) }
+  await expect(kpi(page, 'Pairwise ODD coverage').locator('b')).toHaveText('—')
+  await page.getByRole('link', { name: 'Coverage report' }).click()
+  await expect(page.getByText('Pairs need at least two ODD parameters.').first()).toBeVisible(soon)
+  await page.goto('/app')
+  await expect(page.locator('.project-card')).toBeVisible()
 })
 
-bug(5, 'a fractional bin count does not break the project', async ({ page }) => {
+test('#5 a fractional bin count does not break the project', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,gap,min_ttc\na,rain,0,1\nb,dry,30,4\n')
   await section(page, 'Data & ODD')
   await odd(page, 'gap').getByLabel('Bins for gap').fill('2.5')
   await section(page, 'Overview')
   await expect(kpi(page, '1-way coverage')).toBeVisible(soon)
+  await expect(kpi(page, 'Pairwise ODD coverage')).toContainText('of 6 2-way cells')
 })
 
 const PLANNED = 'run_id,weather,gap,min_ttc\n' + [...Array(6)].map((_, i) => `f${i},rain,5,1\np${i},rain,8,\nk${i},rain,45,4\n`).join('')
