@@ -47,6 +47,14 @@ test('coverage: runs outside the ODD are counted and excluded from cells', () =>
   assert.equal(c.pairs[0].counts.flat().reduce((s, x) => s + x, 0), 1)
 })
 
+test('bins are whole numbers and one dimension has no pairs', () => {
+  const dim = (bins?: number): Odd => [{ key: 'g', label: 'G', kind: 'range', min: 0, max: 10, bins }]
+  assert.deepEqual([2.5, 1.2, 0, -3, 99, NaN, undefined, 4].map(b => coverage(dim(b), []).oneWay[0].total), [3, 1, 1, 1, 20, 5, 5, 4])
+  const c = coverage(dim(5), [{ id: 'a', scenario: 'a', params: { g: 3 }, metrics: {} }])
+  assert.deepEqual([c.pairs.length, c.totalCells, c.oneWayPct], [0, 0, 0.2])
+  assert.deepEqual(findGaps(dim(5), c), [])
+})
+
 test('findGaps lists every uncovered pair cell, riskiest first', () => {
   const runs = [run('a', 'clear', 65, 10, { collision: true }), run('b', 'clear', 95, 30)]
   const verdicts = runs.map(r => judge(r, DEFAULT_THRESHOLDS))

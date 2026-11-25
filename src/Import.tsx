@@ -3,6 +3,7 @@ import { parseCsv } from './engine/csv.ts'
 import { computeMetrics, toTracks } from './engine/metrics.ts'
 import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
 import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
+import { wholeBins } from './engine/coverage.ts'
 import { createSampleProject } from './projectData.ts'
 import { TH_FIELDS } from './Settings.tsx'
 import { putData, sortCampaigns, uuid, type Project, type TrajStore } from './store.ts'
@@ -273,7 +274,7 @@ function OddEditor({ project, update }: { project: Project; update: Props['updat
             <td>{d.kind === 'range'
               ? <div className="row gap-sm"><input className="table-input" type="number" value={d.min} onChange={e => set(i, { min: Number(e.target.value) })} aria-label={`Minimum ${d.key}`} /><span>to</span><input className="table-input" type="number" value={d.max} onChange={e => set(i, { max: Number(e.target.value) })} aria-label={`Maximum ${d.key}`} /></div>
               : <input className="table-input" defaultValue={(d.categories ?? []).join(', ')} onBlur={e => set(i, { categories: e.target.value.split(',').map(x => x.trim()).filter(Boolean) })} aria-label={`Categories of ${d.key}`} />}</td>
-            <td>{d.kind === 'range' ? <input className="table-input narrow" type="number" min="1" max="20" value={d.bins ?? 5} onChange={e => set(i, { bins: Math.max(1, Math.min(20, Number(e.target.value))) })} aria-label={`Bins for ${d.key}`} /> : <span className="muted small">{d.categories?.length ?? 0}</span>}</td>
+            <td>{d.kind === 'range' ? <input className="table-input narrow" type="number" min="1" max="20" value={d.bins ?? 5} onChange={e => set(i, { bins: wholeBins(Number(e.target.value)) })} aria-label={`Bins for ${d.key}`} /> : <span className="muted small">{d.categories?.length ?? 0}</span>}</td>
             <td><input className="table-input narrow" value={d.unit ?? ''} onChange={e => set(i, { unit: e.target.value || undefined })} aria-label={`Unit of ${d.key}`} /></td>
             <td><button type="button" className="btn danger-ghost sm" onClick={async () => {
               if (!(await ask(`Remove ${d.label} from the ODD?`, 'Runs keep the value; it just stops counting towards coverage. You can undo for a few seconds.', 'Remove'))) return

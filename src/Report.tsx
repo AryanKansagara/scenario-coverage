@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { span } from './engine/coverage.ts'
+import { nBins, span } from './engine/coverage.ts'
 import { scopeFromUrl, trend, useAnalysis, useProject } from './projectData.ts'
 import { Empty, fmtN, fmtPct, Link } from './ui.tsx'
 import { HeatLegend, Heatmap, TrendChart } from './viz.tsx'
@@ -27,7 +27,7 @@ export default function Report({ id }: { id: string }) {
       <p className="muted">{scopeLabel} · {fmtN(a.runs.length)} runs · generated {new Date().toLocaleDateString('en-US', { dateStyle: 'long' })}</p>
 
       <div className="kpis">
-        <div className="kpi"><small>Pairwise coverage</small><b>{fmtPct(a.cov.pairwisePct, 1)}</b><p>{a.cov.coveredCells}/{a.cov.totalCells} cells</p></div>
+        <div className="kpi"><small>Pairwise coverage</small><b>{a.cov.totalCells ? fmtPct(a.cov.pairwisePct, 1) : '—'}</b><p>{a.cov.coveredCells}/{a.cov.totalCells} cells</p></div>
         <div className="kpi"><small>1-way coverage</small><b>{fmtPct(a.cov.oneWayPct, 1)}</b></div>
         <div className="kpi"><small>Failure rate</small><b>{judged ? fmtPct(a.fails / judged, 1) : '—'}</b><p>{a.fails} of {judged}</p></div>
         <div className="kpi"><small>Outside ODD</small><b>{a.cov.outside}</b><p>runs</p></div>
@@ -35,12 +35,13 @@ export default function Report({ id }: { id: string }) {
 
       <h2>ODD and thresholds</h2>
       <table><thead><tr><th>Parameter</th><th>Domain</th><th className="num">Bins covered</th></tr></thead>
-        <tbody>{project.odd.map((d, i) => <tr key={d.key}><th>{d.label}</th><td>{d.kind === 'range' ? `${span(d.min ?? 0, d.max ?? 1)} ${d.unit ?? ''} in ${d.bins} bins` : (d.categories ?? []).join(', ')}</td><td className="num">{a.cov.oneWay[i].covered}/{a.cov.oneWay[i].total}</td></tr>)}</tbody></table>
+        <tbody>{project.odd.map((d, i) => <tr key={d.key}><th>{d.label}</th><td>{d.kind === 'range' ? `${span(d.min ?? 0, d.max ?? 1)} ${d.unit ?? ''} in ${nBins(d)} bins` : (d.categories ?? []).join(', ')}</td><td className="num">{a.cov.oneWay[i].covered}/{a.cov.oneWay[i].total}</td></tr>)}</tbody></table>
       <p className="small muted">Fail if: TTC &lt; {th.ttc} s · PET &lt; {th.pet} s · gap &lt; {th.minDist} m · deceleration &gt; {th.maxDecel} m/s² · jerk &gt; {th.maxJerk} m/s³ · lane offset &gt; {th.laneDev} m · collision · simulator failure.</p>
 
       {tr.length > 1 && <><h2>Coverage trend</h2><TrendChart points={tr} /></>}
 
       <h2>Least covered parameter pairs</h2>
+      {!worst.length && <p>Pairs need at least two ODD parameters.</p>}
       <div className="grid-2">{worst.map(p => <div key={`${p.a}-${p.b}`}><h3>{project.odd[p.a].label} × {project.odd[p.b].label} · {fmtPct(p.covered / p.total)}</h3><Heatmap odd={project.odd} pair={p} /></div>)}</div>
       <HeatLegend />
 
@@ -49,7 +50,7 @@ export default function Report({ id }: { id: string }) {
       {a.clusters.length > 0 && <table><thead><tr><th>Cluster</th><th className="num">Runs</th><th>Shared conditions</th></tr></thead><tbody>{a.clusters.map(c => <tr key={c.id}><th>{c.id + 1}</th><td className="num">{c.runs.length}</td><td>{c.summary.join(' · ') || 'spread out'}</td></tr>)}</tbody></table>}
 
       <h2>Top untested combinations</h2>
-      {a.gaps.length ? <ol className="cols-2">{a.gaps.slice(0, 20).map(g => <li key={g.text}>{g.text}</li>)}</ol> : <p>Full pairwise coverage.</p>}
+      {a.gaps.length ? <ol className="cols-2">{a.gaps.slice(0, 20).map(g => <li key={g.text}>{g.text}</li>)}</ol> : !a.cov.totalCells ? <p>Pairs need at least two ODD parameters.</p> : <p>Full pairwise coverage.</p>}
       <p className="small muted">Coverage counts a 2-way cell as covered when at least one run lands in both bins. Gaps are ranked by how often their bins fail elsewhere.</p>
     </article>
   )

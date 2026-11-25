@@ -2,7 +2,9 @@ import type { Metrics, Odd, OddParam, ParamValue, Run, Thresholds } from './type
 
 // ---------- Binning ----------
 
-export const nBins = (p: OddParam) => p.kind === 'category' ? (p.categories?.length ?? 0) : Math.max(1, p.bins ?? 5)
+/** Bins are whole numbers from 1 to 20. */
+export const wholeBins = (n: number) => Number.isFinite(n) ? Math.max(1, Math.min(20, Math.round(n))) : 5
+export const nBins = (p: OddParam) => p.kind === 'category' ? (p.categories?.length ?? 0) : wholeBins(p.bins ?? 5)
 
 /** Bin index of a value, or -1 when it is outside the ODD (out of range, unknown category, missing). */
 export function binOf(p: OddParam, v: ParamValue | undefined): number {
