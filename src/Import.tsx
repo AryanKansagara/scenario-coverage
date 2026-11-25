@@ -16,7 +16,7 @@ type Staged =
   | { kind: 'table'; format: Format; fileName: string; headers: string[]; rows: string[][]; lines: number[]; map: Mapping }
   | { kind: 'xosc'; batch: XoscBatch }
   | { kind: 'carla'; fileName: string; results: CarlaResult[] }
-  | { kind: 'traj'; fileName: string; byRun: Map<string, TrajRow[]>; issues: Issue[]; degrees: boolean }
+  | { kind: 'traj'; fileName: string; byRun: Map<string, TrajRow[]>; issues: Issue[]; headings: string }
 
 const today = () => new Date().toISOString().slice(0, 10)
 const ROLES: Role[] = ['param', 'id', 'scenario', 'outcome', 'reason', 'ttc', 'pet', 'minDist', 'maxDecel', 'maxJerk', 'laneDev', 'collision', 'ignore']
@@ -40,9 +40,9 @@ export default function DataTab({ project, traj, update }: Props) {
       } else if (fmt === 'carla-json') setStaged({ kind: 'carla', fileName: list.length > 1 ? `${list[0].name} + ${list.length - 1} more` : list[0].name, results: list.flatMap((_, i) => parseCarla(texts[i])) })
       else if (fmt === 'trajectory-csv') {
         const byRun = new Map<string, TrajRow[]>(), issues: Issue[] = []
-        let degrees = false
-        list.forEach((f, i) => { const t = parseTrajectories(texts[i], f.name.replace(/\.[^.]+$/, '')); t.byRun.forEach((v, k) => byRun.set(k, [...(byRun.get(k) ?? []), ...v])); issues.push(...t.issues.map(x => ({ ...x, message: list.length > 1 ? `${f.name}: ${x.message}` : x.message }))); degrees ||= t.degrees })
-        setStaged({ kind: 'traj', fileName: list.map(f => f.name).join(', '), byRun, issues, degrees })
+        const headings = new Set<string>()
+        list.forEach((f, i) => { const t = parseTrajectories(texts[i], f.name.replace(/\.[^.]+$/, '')); t.byRun.forEach((v, k) => byRun.set(k, [...(byRun.get(k) ?? []), ...v])); issues.push(...t.issues.map(x => ({ ...x, message: list.length > 1 ? `${f.name}: ${x.message}` : x.message }))); headings.add(t.derived ? 'derived from positions' : t.degrees ? 'in degrees (converted)' : 'in radians') })
+        setStaged({ kind: 'traj', fileName: list.map(f => f.name).join(', '), byRun, issues, headings: [...headings].join(' and ') })
       } else {
         const t = fmt === 'param-json' ? jsonTable(texts[0]) : csvTable(texts[0])
         if (!t.headers.length || !t.rows.length) throw new Error('The file has a header but no data rows.')
@@ -255,7 +255,7 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
     go(`/app/p/${project.id}/replay?run=${encodeURIComponent([...metrics.keys()].map(id => keys.get(id) ?? id)[0] ?? '')}`)
   }
   return <>
-    <p><b>{s.fileName}</b> · {ids.length} run{ids.length === 1 ? '' : 's'} · headings in {s.degrees ? 'degrees (converted)' : 'radians'}</p>
+    <p><b>{s.fileName}</b> · {ids.length} run{ids.length === 1 ? '' : 's'} · headings {s.headings}</p>
     <p className="small">{matched.length} match existing runs by id and will get TTC, PET, min gap, braking, jerk and lane offset recomputed. {ids.length - matched.length ? <span className="warn-text">{ids.length - matched.length} have no matching run ({ids.filter(i => !matched.includes(i)).slice(0, 4).join(', ')}) and go into a new campaign without ODD parameters.</span> : null}</p>
     {choices.length > 1 && <label className="field"><span>{shared.length} run id{shared.length === 1 ? ' is' : 's are'} used in several campaigns ({shared.slice(0, 4).join(', ')}). These trajectories belong to</span>
       <select value={choices.some(c => c.id === prefer) ? prefer : choices.at(-1)!.id} onChange={e => setPrefer(e.target.value)}>{choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>

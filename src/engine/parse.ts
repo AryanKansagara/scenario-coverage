@@ -15,7 +15,7 @@ export interface Issue { line: number; level: 'error' | 'warning'; message: stri
 
 export const norm = (h: string) => h.trim().toLowerCase().replace(/^"|"$/g, '').replace(/[\s\-.()/]+/g, '_').replace(/_+$/, '')
 
-const TRAJ = { t: ['t', 'time', 'timestamp', 'sim_time', 'time_s'], id: ['actor', 'actor_id', 'id', 'agent', 'agent_id', 'entity', 'object_id'], x: ['x', 'pos_x', 'x_m'], y: ['y', 'pos_y', 'y_m'], h: ['heading', 'yaw', 'theta', 'h', 'heading_rad', 'heading_deg', 'yaw_deg'], v: ['speed', 'v', 'velocity', 'speed_mps', 'speed_m_s'] }
+const TRAJ = { t: ['t', 'time', 'timestamp', 'sim_time', 'time_s'], id: ['actor', 'actor_id', 'id', 'agent', 'agent_id', 'entity', 'object_id'], x: ['x', 'pos_x', 'x_m'], y: ['y', 'pos_y', 'y_m'], h: ['heading', 'yaw', 'theta', 'h', 'heading_rad', 'heading_deg', 'yaw_deg', 'yaw_rad', 'theta_deg', 'theta_rad'], v: ['speed', 'v', 'velocity', 'speed_mps', 'speed_m_s'] }
 
 const isTrajHeader = (row: string[]) => { const h = row.map(norm); const has = (al: string[]) => h.some(x => al.includes(x)); return has(TRAJ.t) && has(TRAJ.x) && has(TRAJ.y) && has(TRAJ.id) }
 
@@ -560,7 +560,32 @@ export function freeTrajKey(campaigns: Campaign[], campaign: string, run: Run): 
   return others.has(run.id) ? `${campaign}:${run.id}` : run.id
 }
 
-export interface TrajParsed { byRun: Map<string, TrajRow[]>; issues: Issue[]; degrees: boolean }
+export interface TrajParsed { byRun: Map<string, TrajRow[]>; issues: Issue[]; degrees: boolean; /** The file has no heading column. */ derived: boolean }
+
+/** Positions closer together than this (m) say nothing about the direction of travel. */
+const MIN_MOVE = 0.2
+
+/** Headings along the direction of travel for one actor's rows in time order. False when it never moves far enough to have one. */
+function headingsFromMotion(rows: TrajRow[]): boolean {
+  const key = [0]
+  rows.forEach((r, i) => { const k = rows[key[key.length - 1]]; if (Math.hypot(r.x - k.x, r.y - k.y) >= MIN_MOVE) key.push(i) })
+  if (key.length < 2) return false
+  const dir = (a: number, b: number) => Math.atan2(rows[b].y - rows[a].y, rows[b].x - rows[a].x)
+  let k = 0
+  rows.forEach((r, i) => {
+    if (i === key[k + 1]) k++
+    const seg = Math.min(k, key.length - 2)
+    r.h = dir(key[seg], key[seg + 1])
+    // At a key position, look from the one before to the one after it, unless the actor turned back there.
+    if (i === key[k] && k > 0 && k + 1 < key.length) {
+      const a = key[k - 1], b = key[k + 1]
+      if (Math.cos(dir(a, i) - r.h) > 0) r.h = dir(a, b)
+    }
+    // A negative speed is driving backwards.
+    if (r.v < 0) r.h += Math.PI
+  })
+  return true
+}
 
 /**
  * esmini --csv_logger writes one row per step with a block of columns per entity ("#2 World_Position_X [m]").
@@ -593,7 +618,7 @@ function esminiWide(rows: string[][], lines: number[], fallbackRun: string, issu
 
 /**
  * Trajectory CSV: time, actor id, x, y, heading, speed (+ optional run_id, length, width). Heading in degrees is
- * detected. Reads esmini dat2csv output (a version banner above the header, entity names in `name`) and esmini
+ * detected unless the column names its unit; without a heading column it is derived from positions. Reads esmini dat2csv output (a version banner above the header, entity names in `name`) and esmini
  * --csv_logger files (one column block per entity) as they are written.
  */
 export function parseTrajectories(text: string, fallbackRun: string): TrajParsed {
@@ -626,18 +651,30 @@ export function parseTrajectories(text: string, fallbackRun: string): TrajParsed
     }
   }
   if (!parsed.length) throw new Error('No usable trajectory rows: every row was missing time, actor, position or heading.')
-  const degrees = wide < 0 && (parsed.some(p => Math.abs(p.row.h) > 2 * Math.PI + 0.01) || /deg/.test(h[c.h] ?? ''))
+  const derived = wide < 0 && c.h < 0
+  const unit = (h[c.h] ?? '').match(/_(deg|rad)$/)?.[1]
+  const large = parsed.some(p => Math.abs(p.row.h) > 2 * Math.PI + 0.01)
+  const degrees = wide < 0 && (unit ? unit === 'deg' : large)
+  if (wide < 0 && unit === 'rad' && large) issues.push({ line: 1, level: 'warning', message: `${rows[0][c.h].trim()} goes beyond 2π; it is read as radians, as the column name says.` })
+  const still: string[] = []
   const byRun = new Map<string, TrajRow[]>()
   for (const { run, row } of parsed) {
     if (degrees) row.h = (row.h * Math.PI) / 180
     const l = byRun.get(run); if (l) l.push(row); else byRun.set(run, [row])
   }
   // Fill missing speeds from positions.
-  for (const list of byRun.values()) {
+  for (const [run, list] of byRun) {
     const actors = new Map<string, TrajRow[]>()
     list.forEach(r => { const a = actors.get(r.id); if (a) a.push(r); else actors.set(r.id, [r]) })
+    for (const a of actors.values()) a.sort((p, q) => p.t - q.t)
+    if (derived) {
+      const ids = [...actors.keys()], ego = ids.find(id => /ego|hero/i.test(id)) ?? ids[0]
+      const stuck = ids.filter(id => !headingsFromMotion(actors.get(id)!))
+      // The direction of an actor that stands still is not in the file; traffic on the ego's road is the likeliest case.
+      const facing = stuck.includes(ego) ? 0 : actors.get(ego)![0].h
+      for (const id of stuck) { for (const r of actors.get(id)!) r.h = facing; still.push(byRun.size > 1 ? `${run}: ${id}` : id) }
+    }
     for (const a of actors.values()) {
-      a.sort((p, q) => p.t - q.t)
       a.forEach((r, i) => {
         if (Number.isFinite(r.v)) return
         const p = a[Math.max(0, i - 1)], q = a[Math.min(a.length - 1, i + 1)]
@@ -645,6 +682,8 @@ export function parseTrajectories(text: string, fallbackRun: string): TrajParsed
       })
     }
   }
+  if (derived) issues.push({ line: 1, level: 'warning', message: 'No heading column; headings were derived from positions.' })
+  if (still.length) issues.push({ line: 1, level: 'warning', message: `No heading column, and ${still.slice(0, 4).join(', ')}${still.length > 4 ? ` and ${still.length - 4} more` : ''} never moved; taken to face the way the ego starts (along +x when the ego does not move either).` })
   if (c.v < 0 && wide < 0) issues.push({ line: 1, level: 'warning', message: 'No speed column; speeds were derived from positions.' })
-  return { byRun, issues, degrees }
+  return { byRun, issues, degrees, derived }
 }

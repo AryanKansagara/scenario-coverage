@@ -188,13 +188,23 @@ bug(16, 'recommendations reach the middle bins of a small range', async ({ page 
   await expect(kpi(page, 'After these \\d+ runs').locator('b')).toHaveText('100.0%', soon)
 })
 
-bug(9, 'trajectory: a missing heading column is not read as "facing +x"', async ({ page }) => {
+test('#9 trajectory: a missing heading column is not read as "facing +x"', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,gap\nT1,rain,40\nT2,dry,50\n')
   await section(page, 'Data & ODD')
-  // Driving north at 10 m/s towards a stopped car 30.2 m ahead, edge to edge.
+  // Driving north at 10 m/s towards a stopped car 30.7 m ahead, edge to edge.
   await drop(page, { name: 't.csv', text: 'run_id,time,actor_id,x,y,speed,length,width\n' + [0, 1, 2].map(t => `T1,${t},ego,0,${10 * t},10,4.8,1.9\nT1,${t},car,0,35.5,0,4.8,1.9\n`).join('') })
-  await expect(issues(page)).toContainText('heading', soon)
+  await expect(issues(page)).toContainText('No heading column; headings were derived from positions.', soon)
+  await expect(page.getByText('headings derived from positions', { exact: false }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Compute metrics and save' }).click()
+  await expect(page.locator('.metric', { hasText: 'Min TTC' }).locator('b')).toHaveText('1.08', soon)
+  await expect(page.locator('.metric', { hasText: 'Lane offset' }).locator('b')).toHaveText('0.00')
+})
+
+test('#9 trajectory: heading_rad is read as radians whatever its size', async ({ page }) => {
+  await newProject(page)
+  await drop(page, { name: 't.csv', text: 'run_id,time,actor_id,x,y,heading_rad,speed\nT1,0,ego,0,0,6.9,10\nT1,1,ego,10,0,6.9,10\n' })
+  await expect(page.getByText('headings in radians')).toBeVisible(soon)
 })
 
 bug(17, 'a note and a status set right after each other are both kept', async ({ page }) => {
