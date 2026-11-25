@@ -325,3 +325,25 @@ test('derived dimensions that never vary in a batch are left out of the suggeste
   assert.ok(keys.includes('egostarts'))
   assert.equal(b.runs[0].params.road_network, 'e6mini')
 })
+
+test('a truncated or damaged .xosc is refused by name and the rest of the batch still imports', () => {
+  const body = CUT_IN.trimEnd()
+  // Cut anywhere before the last character, the document is not complete.
+  for (let i = body.indexOf('<OpenSCENARIO>') + 15; i < body.length; i++) assert.throws(() => parseXosc(body.slice(0, i)), /damaged or cut off/, `cut at ${i}`)
+  assert.equal(parseXosc(body + '\n\n').params.EgoSpeed, '108')
+  const bad = [body.replace('</Entities>', ''), body.replace('<Entities>', ''), body + body.slice(body.indexOf('<OpenSCENARIO>')), body.replace('<Entities>', '<!-- <Entities>')]
+  for (const t of bad) assert.throws(() => parseXosc(t), /damaged or cut off/)
+  // Quotes, '>' in attributes, CDATA, processing instructions and a document type are all well-formed.
+  const ok = `<?xml version="1.0"?><!DOCTYPE OpenSCENARIO [<!ENTITY a "<x>">]><OpenSCENARIO><FileHeader description='a > b "c"'/><?note <x?><ParameterDeclarations/><![CDATA[<y>]]><Storyboard ></Storyboard ></OpenSCENARIO>`
+  assert.equal(parseXosc(ok).entities.length, 0)
+
+  const b = xoscRuns([{ name: 'good.xosc', text: CUT_IN }, { name: 'cut.xosc', text: body.slice(0, 900) }])
+  assert.deepEqual(b.runs.map(r => r.id), ['good'])
+  assert.equal(b.errors.length, 1)
+  assert.match(b.errors[0], /^cut\.xosc: The file is damaged or cut off/)
+  // The scenario a sweep varies can be the damaged one.
+  const s = xoscRuns([{ name: 'cut-in_parameter_set.xosc', text: PARAM_SET }, { name: 'cut-in.xosc', text: body.slice(0, 900) }])
+  assert.ok(s.runs.length > 0 && s.runs.every(r => r.params.road_network === undefined))
+  assert.match(s.errors[0], /^cut-in\.xosc/)
+  assert.match(s.notes[0], /could not be read/)
+})

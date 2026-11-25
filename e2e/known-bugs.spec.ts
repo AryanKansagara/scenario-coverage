@@ -134,10 +134,11 @@ test('#8 trajectory: driving straight north has no lane offset', async ({ page }
   await expect(page.locator('.metric', { hasText: 'Lane offset' }).locator('b')).toHaveText('0.00', soon)
 })
 
-bug(10, 'a truncated .xosc is refused', async ({ page }) => {
+test('#10 a truncated .xosc is refused', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'x.xosc', text: '<?xml version="1.0"?>\n<OpenSCENARIO>\n<ParameterDeclarations><ParameterDeclaration name="A" parameterType="double" value="5"/></ParameterDeclarations>\n<Entities><ScenarioObject name="Eg' })
   await expect(page.getByRole('button', { name: 'Import 0 scenarios' })).toBeDisabled(soon)
+  await expect(page.locator('.error')).toContainText('x.xosc: The file is damaged or cut off')
 })
 
 bug(11, 'dropping two tables does not silently lose one', async ({ page }) => {
