@@ -53,10 +53,13 @@ export function parseNum(raw: string): number {
   return Number(s)
 }
 
+/** Text a spreadsheet would run as a formula gets a leading apostrophe; numbers stay as they are. */
+const inert = (s: string) => /^[=+\-@\t\r]/.test(s) && !/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s) ? `'${s}` : s
+
 export function toCsv(rows: (string | number)[][]): string {
   return rows.map(r => r.map(v => {
-    const s = typeof v === 'number' ? String(Math.round(v * 1e6) / 1e6) : v
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    const s = typeof v === 'number' ? String(Math.round(v * 1e6) / 1e6) : inert(v)
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }).join(',')).join('\n') + '\n'
 }
 

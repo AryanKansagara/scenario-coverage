@@ -176,11 +176,12 @@ test('#12 a bad first JSON record is skipped', async ({ page }) => {
   await expect(page.locator('.kpis').first()).toBeVisible()
 })
 
-bug(13, 'exports do not carry spreadsheet formulas', async ({ page }) => {
+test('#13 exports do not carry spreadsheet formulas', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,scenario,weather,light,min_ttc\na,"=HYPERLINK(""http://x.test"",""go"")",rain,day,1\nb,s,dry,night,4\n')
   await section(page, 'Failures')
   expect((await downloaded(page, 'Download CSV')).text).not.toMatch(/(^|[,"\n])=HYPERLINK/)
+  expect((await downloaded(page, 'Download CSV')).text).toContain(`a,"'=HYPERLINK(""http://x.test"",""go"")",rain,day,`)
 })
 
 bug(14, 'a negative ODD bound can be typed', async ({ page }) => {
