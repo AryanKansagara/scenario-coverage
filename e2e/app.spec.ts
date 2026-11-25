@@ -1,0 +1,92 @@
+import { test, expect, newProject, importTable, kpi, section, odd, FOUR } from './fixtures.ts'
+
+test('landing, docs, settings and 404', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.stage-card .heatmap')).toBeVisible()
+  await page.goto('/docs')
+  await expect(page.getByRole('heading', { name: 'Getting your scenarios and results in' })).toBeVisible()
+  await page.goto('/settings')
+  await page.getByRole('radio', { name: 'Dark' }).click()
+  await page.reload()
+  await expect(page.getByRole('radio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true')
+  await page.goto('/nowhere')
+  await expect(page.getByRole('heading', { name: 'This route is outside the ODD' })).toBeVisible()
+  await page.goto('/app/p/missing')
+  await expect(page.getByRole('heading', { name: 'Project not found' })).toBeVisible()
+})
+
+test('the sample opens every section and the report', async ({ page }) => {
+  await page.goto('/app')
+  await page.getByRole('button', { name: /Highway trucking/ }).click()
+  await expect(page.getByText('600 runs · 7 ODD dimensions · 3 campaigns')).toBeVisible()
+  await expect(page.locator('.badge.synthetic').first()).toBeVisible()
+  await section(page, 'Coverage')
+  await expect(page.locator('.pair-tile')).toHaveCount(21)
+  await section(page, 'Failures')
+  await expect(page.locator('.worklist tbody tr').first()).toBeVisible()
+  await section(page, 'Replay')
+  await expect(page.locator('.replay-stage')).toBeVisible()
+  await section(page, 'Next scenarios')
+  await expect(page.getByText('REC-024')).toBeVisible()
+  await section(page, 'History')
+  await expect(page.locator('.trend')).toBeVisible()
+  await page.getByRole('link', { name: 'Coverage report' }).click()
+  await expect(page.getByText('ODD coverage report · synthetic sample data')).toBeVisible()
+})
+
+test('a project, its ODD, thresholds and triage survive a reload', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'four.csv', FOUR)
+  await section(page, 'Data & ODD')
+  await odd(page, 'gap').getByLabel('Bins for gap').fill('3')
+  await page.getByLabel('Min TTC (s)').fill('0.9')
+  await section(page, 'Failures')
+  // r1 (TTC 1.0) passes the lower limit; only r3 is left.
+  await expect(page.locator('.worklist tbody tr')).toHaveCount(1)
+  await page.getByLabel('Status of r3').selectOption('fixed')
+  await expect(page.getByLabel('Status of r3')).toHaveValue('fixed')
+  await page.reload()
+  await expect(page.locator('.worklist tbody tr')).toHaveCount(1)
+  await expect(page.getByLabel('Status of r3')).toHaveValue('fixed')
+  await section(page, 'Data & ODD')
+  await expect(page.getByLabel('Min TTC (s)')).toHaveValue('0.9')
+  await expect(page.getByLabel('Bins for gap')).toHaveValue('3')
+})
+
+test('deleting a project asks first and can be undone', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'four.csv', FOUR)
+  await page.goto('/app')
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete project' }).click()
+  await expect(page.locator('.project-card')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.locator('.project-card')).toContainText('45.8%')
+})
+
+test('scope limits the analysis to one campaign and is in the link', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'four.csv', FOUR, { label: 'One', date: '2026-01-01' })
+  await section(page, 'Data & ODD')
+  await importTable(page, 'more.csv', 'run_id,weather,light,gap,min_ttc\nm1,rain,day,13,5\n', { label: 'Two', date: '2026-02-01' })
+  await page.getByLabel('Campaign scope').selectOption({ label: 'Two' })
+  // One run covers one cell in each of three pairs.
+  await expect(kpi(page, 'Pairwise ODD coverage')).toContainText('3 of 24 2-way cells')
+  await page.reload()
+  await expect(kpi(page, 'Pairwise ODD coverage')).toContainText('3 of 24 2-way cells')
+})
+
+test('names from a file are shown as text', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'x.csv', 'run_id,scenario,weather,light,min_ttc\n<img src=x onerror=alert(1)>,<b>bold</b>,<i>rain</i>,day,1\nb,s,dry,night,1\n')
+  await section(page, 'Failures')
+  await expect(page.locator('.worklist')).toContainText('<img src=x onerror=alert(1)>')
+  await expect(page.locator('.worklist img, .worklist b')).toHaveCount(0)
+})
+
+test('signed out, nothing asks for an account', async ({ page }) => {
+  await newProject(page)
+  await page.getByRole('button', { name: 'Sign in to sync' }).click()
+  await expect(page.getByText('Optional. Everything works signed out.')).toBeVisible()
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('sb-')))).toEqual([])
+})
