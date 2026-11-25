@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { csvTable } from './parse.ts'
 import { clusterFailures, extractRules, kmeans, normalise, ruleMatches } from './cluster.ts'
-import { binOf, coverage, findGaps, judge } from './coverage.ts'
+import { binOf, coverage, findGaps, judge, judgeAll } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
 import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
 import { parseCsv } from './csv.ts'
@@ -403,4 +403,19 @@ test('trajectories go to one campaign and never replace another campaign\'s traj
   // Projects saved before this fix: both runs point at one trajectory.
   const both = [{ ...one }, { ...two, runs: [run('a', { traj: true })] }]
   assert.equal(freeTrajKey(both, 'c2', both[1].runs[0]), 'c2:a')
+})
+
+test('planned runs are covered but not judged', () => {
+  const odd: Odd = [{ key: 'g', label: 'Gap', kind: 'range', min: 0, max: 50, bins: 5 }, { key: 'w', label: 'W', kind: 'category', categories: ['a', 'b'] }]
+  const mk = (id: string, g: number, ttc?: number): Run => ({ id, scenario: id, params: { g, w: 'a' }, metrics: ttc === undefined ? {} : { ttc } })
+  const runs = [mk('f', 5, 1), mk('p', 8), mk('k', 45, 4)]
+  const v = judgeAll(runs, DEFAULT_THRESHOLDS), cov = coverage(odd, runs, v)
+  assert.deepEqual([cov.oneWay[0].hits, cov.oneWay[0].judged, cov.oneWay[0].fails], [[2, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 0]])
+  assert.deepEqual([cov.pairs[0].counts[0][0], cov.pairs[0].judged[0][0], cov.pairs[0].fails[0][0]], [2, 1, 1])
+  // g bin 1 fails 1 of 1, w=b was never run (0.5): priority 1.5.
+  assert.equal(findGaps(odd, cov).find(g => g.ai === 0 && g.bi === 1)!.priority, 1.5)
+  const failed = v.map(x => x.status === 'fail'), passed = v.map(x => x.status === 'pass')
+  const probes = (p: boolean[]) => recommend(odd, runs, failed, { n: 4, boundaryShare: 1, passed: p }).filter(r => r.kind === 'boundary')
+  assert.ok(probes(passed).length && probes(passed).every(r => /passing k/.test(r.reason)))
+  assert.equal(probes([false, false, false]).length, 0)
 })

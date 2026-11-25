@@ -118,8 +118,8 @@ export default function Docs() {
       <h2 id="coverage">Coverage, clusters and recommendations</h2>
       <ul>
         <li><b>1-way coverage</b>: share of every parameter&rsquo;s bins with at least one run. <b>Pairwise</b>: share of every bin pair across every two parameters, the standard 2-way combinatorial measure.</li>
-        <li><b>Gaps</b> are untested 2-way cells, ranked by how often their two bins fail elsewhere.</li>
-        <li><b>Failure rules</b>: a depth-3 decision tree (Gini splits) on all runs; leaves that fail at least twice as often as the campaign (and at least 40%) become &ldquo;fails when&rdquo; rules. <b>Clusters</b>: k-means on normalised parameters (k chosen by silhouette).</li>
+        <li><b>Gaps</b> are untested 2-way cells, ranked by how often their two bins fail elsewhere. Planned runs count as covered but never as passing: rules, gap ranking, boundary runs and failure rates use runs with a verdict.</li>
+        <li><b>Failure rules</b>: a depth-3 decision tree (Gini splits) on runs with a verdict; leaves that fail at least twice as often as the campaign (and at least 40%) become &ldquo;fails when&rdquo; rules. <b>Clusters</b>: k-means on normalised parameters (k chosen by silhouette).</li>
         <li><b>Next scenarios</b>: gap-fill runs are picked greedily by new 2-way cells covered, ties broken by maximin distance to everything tested; boundary runs sit between each failing run and its nearest passing run. Export as CSV or an OpenSCENARIO 1.2 <code>ParameterValueDistribution</code> referencing your scenario file. When the ODD came from an .xosc, the export assigns the parameters by their declared names and leaves out derived dimensions such as init speeds, so esmini <code>--param_dist</code> can run it directly.</li>
       </ul>
 

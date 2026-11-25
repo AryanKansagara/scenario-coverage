@@ -37,9 +37,10 @@ function cellsOf(odd: Odd, p: Params): string[] {
  * Boundary: midpoints between each failing run and its nearest passing run, jittered, again picked maximin,
  * so they probe where the pass/fail boundary actually is.
  */
-export function recommend(odd: Odd, runs: Run[], failed: boolean[], opts: { n?: number; boundaryShare?: number; seed?: number } = {}): Rec[] {
+export function recommend(odd: Odd, runs: Run[], failed: boolean[], opts: { n?: number; boundaryShare?: number; seed?: number; /** Runs known to pass; everything not failed when left out. */ passed?: boolean[] } = {}): Rec[] {
+  const passIdx = runs.map((_, i) => i).filter(i => opts.passed ? opts.passed[i] : !failed[i])
   const n = opts.n ?? 24, r = rng(opts.seed ?? 11)
-  const nBoundary = failed.some(Boolean) && runs.some((_, i) => !failed[i]) ? Math.round(n * (opts.boundaryShare ?? 0.35)) : 0
+  const nBoundary = failed.some(Boolean) && passIdx.length ? Math.round(n * (opts.boundaryShare ?? 0.35)) : 0
   const tested = runs.map(x => normalise(odd, x.params))
   const covered = new Set(runs.flatMap(x => cellsOf(odd, x.params)))
   const chosen: number[][] = []
@@ -77,7 +78,6 @@ export function recommend(odd: Odd, runs: Run[], failed: boolean[], opts: { n?: 
 
   // Boundary sampling near failures.
   if (nBoundary) {
-    const passIdx = runs.map((_, i) => i).filter(i => !failed[i])
     const cands: { p: Params; v: number[]; reason: string }[] = []
     runs.forEach((fr, i) => {
       if (!failed[i]) return
