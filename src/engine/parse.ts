@@ -455,10 +455,10 @@ export function parseCarla(text: string): CarlaResult[] {
 
 interface Criterion { name?: string; actual?: unknown; expected?: unknown; success?: boolean; result?: string; test_status?: string; optional?: boolean }
 
-/** "SUCCESS" or "FAILURE" in their usual spellings; undefined for anything else ("RUNNING", "UNKNOWN", nothing). */
+/** "SUCCESS", "ACCEPTABLE" (within scenario_runner's acceptable value) or "FAILURE" in their usual spellings; undefined for anything else ("RUNNING", "UNKNOWN", nothing). */
 function statusWord(raw: unknown): boolean | undefined {
   const s = String(raw ?? '').trim()
-  if (/^(success|successful|succeeded|pass|passed|ok)$/i.test(s)) return true
+  if (/^(success|successful|succeeded|acceptable|pass|passed|ok)$/i.test(s)) return true
   return /fail|unsuccess|not[ _-]*(success|pass)|error|timeout|collision/i.test(s) ? false : undefined
 }
 

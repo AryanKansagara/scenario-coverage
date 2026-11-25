@@ -288,6 +288,7 @@ test('CARLA: no verdict is not a pass, status words are whole, collisions withou
   assert.equal(one({ status: 'not passed' }), 'fail')
   assert.equal(one({ status: 'Success' }), 'pass')
   assert.equal(one({ success: true }), 'pass')
+  assert.equal(one({ criteria: [{ name: 'X', actual: 1, result: 'ACCEPTABLE' }] }), 'pass')
   assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 1 }] }), 'fail')
   assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 0, result: 'RUNNING' }] }), undefined)
   assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 0, result: 'SUCCESS' }] }), 'pass')
