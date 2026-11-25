@@ -433,7 +433,8 @@ export function xoscOdd(list: Xosc[], runs: Run[]): Odd {
 
 // ---------- CARLA scenario_runner ----------
 
-export interface CarlaResult { scenario: string; outcome: 'pass' | 'fail'; reason?: string; metrics: Metrics }
+/** No outcome means the record states no verdict, so the run stays "not run yet". */
+export interface CarlaResult { scenario: string; outcome?: 'pass' | 'fail'; reason?: string; metrics: Metrics }
 
 /**
  * scenario_runner `--json` output ({ scenario, success, criteria: [{ name, actual, expected, result }] }), a list of
@@ -442,40 +443,62 @@ export interface CarlaResult { scenario: string; outcome: 'pass' | 'fail'; reaso
 export function parseCarla(text: string): CarlaResult[] {
   const data = JSON.parse(text)
   const recs = data?._checkpoint?.records
+  const list: unknown[] = Array.isArray(recs) ? recs : Array.isArray(data) ? data : [data]
+  if (!list.length) throw new Error('The results file contains no records.')
+  if (!list.every(r => r !== null && typeof r === 'object' && !Array.isArray(r))) throw new Error('Every result must be a JSON object.')
   if (Array.isArray(recs)) return recs.map((r: { route_id?: string; status?: string; infractions?: Record<string, unknown[]> }) => {
     const inf = Object.entries(r.infractions ?? {}).filter(([, v]) => Array.isArray(v) && v.length)
     const collision = inf.some(([k]) => /collision/i.test(k))
     const ok = /^(completed|perfect)$/i.test(r.status ?? '') && !inf.length
     return { scenario: String(r.route_id ?? 'route'), outcome: ok ? 'pass' : 'fail', reason: ok ? undefined : [r.status, ...inf.map(([k, v]) => `${k} ×${v.length}`)].filter(Boolean).join('; '), metrics: collision ? { collision } : {} }
   })
-  const list: unknown[] = Array.isArray(data) ? data : [data]
   return list.map(raw => {
     const o = raw as { scenario?: string; name?: string; success?: boolean; status?: string; criteria?: Criterion[] }
     const crit = Array.isArray(o.criteria) ? o.criteria : []
     // scenario_runner writes a boolean `success` per criterion; older exports and the console table use a status word.
-    const bad = (c: Criterion) => c.success === false || (c.success === undefined && /fail/i.test(String(c.result ?? c.test_status ?? '')))
-    const failed = crit.filter(c => !c.optional && bad(c))
-    const collision = crit.some(c => /collision/i.test(c.name ?? '') && Number(c.actual) > 0)
-    const success = typeof o.success === 'boolean' ? o.success : o.status ? /success|pass/i.test(o.status) : !failed.length
+    const verdict = (c: Criterion) => typeof c.success === 'boolean' ? c.success : statusWord(c.result ?? c.test_status)
+    const isCollision = (c: Criterion) => /collision/i.test(c.name ?? '') && Number(c.actual) > 0
+    const required = crit.filter(c => !c.optional)
+    const failed = required.filter(c => verdict(c) === false || (verdict(c) === undefined && isCollision(c)))
+    const collision = crit.some(isCollision)
+    const success = typeof o.success === 'boolean' ? o.success : statusWord(o.status) ?? (required.length > 0 && required.every(c => verdict(c) === true) ? true : undefined)
     const metrics: Metrics = {}
     if (crit.some(c => /collision/i.test(c.name ?? ''))) metrics.collision = collision
     const why = (c: Criterion) => `${c.name}: ${typeof c.actual === 'number' ? round6(c.actual) : c.actual}${c.expected === undefined || c.expected === null ? '' : ` (expected ${c.expected})`}`
-    const ok = success && !failed.length
-    return { scenario: String(o.scenario ?? o.name ?? 'scenario'), outcome: ok ? 'pass' : 'fail', reason: failed.length ? failed.map(why).join('; ') : ok ? undefined : 'Reported as failed by scenario_runner', metrics }
+    const outcome = failed.length || success === false ? 'fail' : success ? 'pass' : undefined
+    return { scenario: String(o.scenario ?? o.name ?? 'scenario'), outcome, reason: failed.length ? failed.map(why).join('; ') : outcome === 'fail' ? 'Reported as failed by scenario_runner' : undefined, metrics: outcome || collision ? metrics : {} }
   })
 }
 
 interface Criterion { name?: string; actual?: unknown; expected?: unknown; success?: boolean; result?: string; test_status?: string; optional?: boolean }
 
-/** Attaches CARLA verdicts to runs by scenario name or run id. Unmatched results are returned separately. */
+/** "SUCCESS", "ACCEPTABLE" (within scenario_runner's acceptable value) or "FAILURE" in their usual spellings; undefined for anything else ("RUNNING", "UNKNOWN", nothing). */
+function statusWord(raw: unknown): boolean | undefined {
+  const s = String(raw ?? '').trim()
+  if (/^(success|successful|succeeded|acceptable|pass|passed|ok)$/i.test(s)) return true
+  return /fail|unsuccess|not[ _-]*(success|pass)|error|timeout|collision/i.test(s) ? false : undefined
+}
+
+/**
+ * Attaches CARLA verdicts to runs by run id, else by a scenario name only one run has. Results that match no run, or
+ * several, are returned separately. Repetitions of one run in the same batch fail if any of them failed.
+ */
 export function attachResults(runs: Run[], results: CarlaResult[]): { runs: Run[]; matched: number; unmatched: CarlaResult[] } {
   const out = runs.map(r => ({ ...r }))
   const unmatched: CarlaResult[] = []
   let matched = 0
+  const byName = new Map<string, Run[]>()
+  for (const r of out) { const l = byName.get(r.scenario); if (l) l.push(r); else byName.set(r.scenario, [r]) }
+  const seen = new Set<Run>()
   for (const res of results) {
-    const r = out.find(x => x.id === res.scenario && !x.outcome) ?? out.find(x => x.scenario === res.scenario && !x.outcome) ?? out.find(x => x.id === res.scenario || x.scenario === res.scenario)
+    const named = byName.get(res.scenario) ?? []
+    const r = out.find(x => x.id === res.scenario) ?? (named.length === 1 ? named[0] : undefined)
     if (!r) { unmatched.push(res); continue }
-    r.outcome = res.outcome; r.reason = res.reason; r.metrics = { ...r.metrics, ...res.metrics }
+    const again = seen.has(r), collision = again && r.metrics.collision || res.metrics.collision
+    seen.add(r)
+    r.metrics = { ...r.metrics, ...res.metrics, ...(collision === undefined ? {} : { collision }) }
+    if (again && r.outcome === 'fail') { if (res.outcome === 'fail' && res.reason !== r.reason) r.reason = [r.reason, res.reason].filter(Boolean).join('; ') }
+    else if (res.outcome) { r.outcome = res.outcome; r.reason = res.reason }
     matched++
   }
   return { runs: out, matched, unmatched }
