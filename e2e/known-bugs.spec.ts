@@ -81,7 +81,7 @@ bug(5, 'a fractional bin count does not break the project', async ({ page }) => 
 })
 
 const PLANNED = 'run_id,weather,gap,min_ttc\n' + [...Array(6)].map((_, i) => `f${i},rain,5,1\np${i},rain,8,\nk${i},rain,45,4\n`).join('')
-bug(6, 'planned runs are not evidence of passing', async ({ page }) => {
+test('#6 planned runs are not evidence of passing', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', PLANNED)
   // Only gap 5 (fails) and gap 45 (passes) were run; the rule splits halfway between them, at 25.
@@ -91,11 +91,11 @@ bug(6, 'planned runs are not evidence of passing', async ({ page }) => {
   await expect(page.locator('td', { hasText: /passing p\d/ })).toHaveCount(0, soon)
 })
 
-bug(6, 'a campaign that was not run has no failure rate', async ({ page }) => {
+test('#6 a campaign that was not run has no failure rate', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,rain,day\nb,dry,night\n', { label: 'Plan' })
   await section(page, 'History')
-  await expect(page.getByRole('row', { name: /^Plan / })).toContainText('100.0%—', { timeout: 8000 })
+  await expect(page.getByRole('row', { name: /^Plan / })).toContainText('50.0%—', soon)
 })
 
 bug(7, 'table: an unclosed quote is an error, not one big cell', async ({ page }) => {

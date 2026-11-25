@@ -76,7 +76,7 @@ function Overview(p: TabProps) {
             <ol className="rules">
               {a.rules.slice(0, 4).map((r, i) => <li key={i}><b>{r.text}</b><span className="muted small">{r.fails} of {r.n} runs fail ({fmtPct(r.rate)}) · {r.lift.toFixed(1)}× the base rate</span></li>)}
             </ol>
-          ) : <p className="muted">{a.fails ? 'Failures are spread out; no single region explains them.' : 'No failures in this scope.'}</p>}
+          ) : <p className="muted">{a.fails ? 'Failures are spread out; no single region explains them.' : a.untested === a.runs.length ? 'No run in this scope has a result yet.' : 'No failures in this scope.'}</p>}
           <h3 className="mt">Riskiest untested combinations</h3>
           {a.gaps.length ? <ul className="gap-list">{a.gaps.slice(0, 5).map(g => <li key={g.text}>{g.text}</li>)}</ul> : <p className="muted small">Every 2-way combination has at least one run.</p>}
           <Link href={tabHref(p, 'next')} className="btn primary sm">Recommend next scenarios</Link>
@@ -202,12 +202,13 @@ function FailuresTab(p: TabProps) {
     (status === 'all' || (project.triage[r.id]?.status ?? 'open') === status))
   const setTriage = (id: string, s: TriageStatus, note?: string) => void update({ triage: { ...project.triage, [id]: { status: s, note: note ?? project.triage[id]?.note, at: Date.now() } } })
   const csv = () => toCsv([['run_id', 'scenario', ...project.odd.map(d => d.key), 'reasons', 'cluster', 'status', 'note'], ...rows.map(({ r, v }) => [r.id, r.scenario, ...project.odd.map(d => r.params[d.key] ?? ''), v.reasons.join('; '), (a.clusterOf.get(r) ?? 0) + 1, project.triage[r.id]?.status ?? 'open', project.triage[r.id]?.note ?? ''])])
+  if (a.untested === a.runs.length) return <div className="panel"><Empty title="No results in this scope"><p className="muted">None of these runs has a verdict yet. Import results or trajectories on the Data &amp; ODD tab.</p><Link href={`/app/p/${project.id}/data`} className="btn primary">Import results</Link></Empty></div>
   if (!a.fails) return <div className="panel"><Empty title="No failures in this scope"><p className="muted">Every judged run is within your thresholds. Tighten them on the Data &amp; ODD tab, or look for gaps instead.</p><Link href={tabHref(p, 'next')} className="btn primary">Next scenarios</Link></Empty></div>
   return (
     <>
       <div className="grid-2">
         <div className="panel">
-          <div className="panel-head"><h2>Failure rules</h2><span className="muted small">Decision tree on all runs, fail vs pass</span></div>
+          <div className="panel-head"><h2>Failure rules</h2><span className="muted small">Decision tree on judged runs, fail vs pass</span></div>
           {a.rules.length ? <div className="choice-list">
             {a.rules.map((r, i) => (
               <button key={i} type="button" className={`choice${rule === i ? ' on' : ''}`} aria-pressed={rule === i} onClick={() => setRule(rule === i ? null : i)}>
@@ -307,7 +308,7 @@ function NextTab(p: TabProps) {
   const [n, setN] = useState(d.recCount)
   const [share, setShare] = useState(d.boundaryShare)
   const [seed, setSeed] = useState(11)
-  const recs = useMemo(() => recommend(project.odd, a.runs, a.failed, { n, boundaryShare: share, seed }), [project.odd, a.runs, a.failed, n, share, seed])
+  const recs = useMemo(() => recommend(project.odd, a.runs, a.failed, { n, boundaryShare: share, seed, passed: a.passed }), [project.odd, a.runs, a.failed, a.passed, n, share, seed])
   const after = useMemo(() => coverage(project.odd, [...a.runs, ...recs.map(r => ({ id: r.id, scenario: r.id, params: r.params, metrics: {} }))]), [recs, a.runs, project.odd])
   const xosc = recsToXosc(project.odd, recs, project.scenarioFile)
   return (
@@ -360,7 +361,7 @@ function HistoryTab(p: TabProps) {
     const both = coverage(project.odd, [...ca.runs, ...cb.runs])
     const cells = (c: typeof x.cov) => new Set(c.pairs.flatMap((pp, k) => pp.counts.flatMap((r, i) => r.map((n, j) => n ? `${k}:${i}:${j}` : '')).filter(Boolean)))
     const sa = cells(x.cov), sb = cells(y.cov)
-    const rate = (z: typeof x) => z.runs.length - z.untested ? z.fails / (z.runs.length - z.untested) : 0
+    const rate = (z: typeof x) => z.runs.length - z.untested ? z.fails / (z.runs.length - z.untested) : NaN
     return { x, y, both, newCells: [...sb].filter(c => !sa.has(c)).length, lostCells: [...sa].filter(c => !sb.has(c)).length, rateA: rate(x), rateB: rate(y),
       rulesNew: y.rules.filter(r => !x.rules.some(o => o.text === r.text)), rulesGone: x.rules.filter(r => !y.rules.some(o => o.text === r.text)) }
   }, [ca, cb, project.odd, project.thresholds])
@@ -400,7 +401,7 @@ function HistoryTab(p: TabProps) {
           <div className="kpis">
             <div className="kpi"><small>Pairwise coverage</small><b>{fmtPct(cmp.y.cov.pairwisePct, 1)}</b><p>{signed((cmp.y.cov.pairwisePct - cmp.x.cov.pairwisePct) * 100, x => x.toFixed(1))} pts vs baseline ({fmtPct(cmp.x.cov.pairwisePct, 1)})</p></div>
             <div className="kpi"><small>Newly covered cells</small><b>{cmp.newCells}</b><p>{cmp.lostCells} cells only the baseline touched</p></div>
-            <div className="kpi"><small>Failure rate</small><b className={cmp.rateB > cmp.rateA ? 'error' : 'good-text'}>{fmtPct(cmp.rateB, 1)}</b><p>{signed((cmp.rateB - cmp.rateA) * 100, x => x.toFixed(1))} pts vs {fmtPct(cmp.rateA, 1)}</p></div>
+            <div className="kpi"><small>Failure rate</small><b className={cmp.rateB > cmp.rateA ? 'error' : cmp.rateB <= cmp.rateA ? 'good-text' : undefined}>{fmtPct(cmp.rateB, 1)}</b><p>{Number.isNaN(cmp.rateB - cmp.rateA) ? `baseline ${fmtPct(cmp.rateA, 1)}; no judged runs to compare` : `${signed((cmp.rateB - cmp.rateA) * 100, x => x.toFixed(1))} pts vs ${fmtPct(cmp.rateA, 1)}`}</p></div>
             <div className="kpi"><small>Together</small><b>{fmtPct(cmp.both.pairwisePct, 1)}</b><p>pairwise coverage of both</p></div>
           </div>
           <div className="grid-2">

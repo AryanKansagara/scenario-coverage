@@ -59,8 +59,8 @@ export const judgeAll = (runs: Run[], th: Thresholds) => runs.map(r => judge(r, 
 
 // ---------- Coverage ----------
 
-export interface OneWay { key: string; label: string; labels: string[]; hits: number[]; fails: number[]; covered: number; total: number }
-export interface Pair { a: number; b: number; counts: number[][]; fails: number[][]; covered: number; total: number }
+export interface OneWay { key: string; label: string; labels: string[]; hits: number[]; /** Runs with a verdict; planned runs are hits only. */ judged: number[]; fails: number[]; covered: number; total: number }
+export interface Pair { a: number; b: number; counts: number[][]; judged: number[][]; fails: number[][]; covered: number; total: number }
 export interface Coverage {
   oneWay: OneWay[]
   pairs: Pair[]
@@ -75,19 +75,21 @@ export interface Coverage {
 export function coverage(odd: Odd, runs: Run[], verdicts?: Verdict[]): Coverage {
   const bins = runs.map(r => odd.map(p => binOf(p, r.params[p.key])))
   const failed = runs.map((_, i) => verdicts?.[i]?.status === 'fail')
+  const judged = runs.map((_, i) => verdicts?.[i]?.status !== 'untested')
   const oneWay: OneWay[] = odd.map((p, k) => {
-    const n = nBins(p), hits = Array(n).fill(0), fails = Array(n).fill(0)
-    bins.forEach((b, i) => { if (b[k] >= 0) { hits[b[k]]++; if (failed[i]) fails[b[k]]++ } })
-    return { key: p.key, label: p.label, labels: binLabels(p), hits, fails, covered: hits.filter(h => h > 0).length, total: n }
+    const n = nBins(p), hits = Array(n).fill(0), done = Array(n).fill(0), fails = Array(n).fill(0)
+    bins.forEach((b, i) => { if (b[k] >= 0) { hits[b[k]]++; if (judged[i]) done[b[k]]++; if (failed[i]) fails[b[k]]++ } })
+    return { key: p.key, label: p.label, labels: binLabels(p), hits, judged: done, fails, covered: hits.filter(h => h > 0).length, total: n }
   })
   const pairs: Pair[] = []
   for (let a = 0; a < odd.length; a++) for (let b = a + 1; b < odd.length; b++) {
     const na = nBins(odd[a]), nb = nBins(odd[b])
     const counts = Array.from({ length: na }, () => Array(nb).fill(0) as number[])
+    const done = Array.from({ length: na }, () => Array(nb).fill(0) as number[])
     const fails = Array.from({ length: na }, () => Array(nb).fill(0) as number[])
-    bins.forEach((x, i) => { if (x[a] >= 0 && x[b] >= 0) { counts[x[a]][x[b]]++; if (failed[i]) fails[x[a]][x[b]]++ } })
+    bins.forEach((x, i) => { if (x[a] >= 0 && x[b] >= 0) { counts[x[a]][x[b]]++; if (judged[i]) done[x[a]][x[b]]++; if (failed[i]) fails[x[a]][x[b]]++ } })
     const covered = counts.flat().filter(c => c > 0).length
-    pairs.push({ a, b, counts, fails, covered, total: na * nb })
+    pairs.push({ a, b, counts, judged: done, fails, covered, total: na * nb })
   }
   const sum = <T,>(l: T[], f: (x: T) => number) => l.reduce((s, x) => s + f(x), 0)
   const coveredCells = sum(pairs, p => p.covered), totalCells = sum(pairs, p => p.total)
@@ -108,7 +110,7 @@ export interface Gap { a: string; ai: number; b: string; bi: number; text: strin
  * so the riskiest holes get filled before the comfortable ones.
  */
 export function findGaps(odd: Odd, cov: Coverage): Gap[] {
-  const rate = (k: number, i: number) => { const o = cov.oneWay[k]; return o.hits[i] ? o.fails[i] / o.hits[i] : 0.5 }
+  const rate = (k: number, i: number) => { const o = cov.oneWay[k]; return o.judged[i] ? o.fails[i] / o.judged[i] : 0.5 }
   const out: Gap[] = []
   for (const p of cov.pairs) for (let i = 0; i < p.counts.length; i++) for (let j = 0; j < p.counts[i].length; j++) {
     if (p.counts[i][j] > 0) continue
