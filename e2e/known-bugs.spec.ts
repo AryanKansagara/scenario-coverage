@@ -26,13 +26,13 @@ bug(2, 'CARLA: a later pass does not hide an earlier failure of the same run', a
   await expect(kpi(page, 'Failure rate')).toContainText('1 of 1 judged runs', soon)
 })
 
-bug(3, 'table: collision counts and float booleans are collisions', async ({ page }) => {
+test('#3 table: collision counts and float booleans are collisions', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,collision\na,rain,day,1.0\nb,dry,night,2\nc,dry,day,0.0\n')
   await expect(kpi(page, 'Failure rate')).toContainText('2 of 3 judged runs', soon)
 })
 
-bug(3, 'table: braking and lane offset with a minus sign are judged by size', async ({ page }) => {
+test('#3 table: braking and lane offset with a minus sign are judged by size', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,max_decel,lane_offset\na,rain,day,-7.2,0\nb,dry,night,-1,-1.4\nc,dry,day,-1,0.2\n')
   await expect(kpi(page, 'Failure rate')).toContainText('2 of 3 judged runs', soon)

@@ -68,7 +68,17 @@ export function toOutcome(raw: string): 'pass' | 'fail' | undefined {
   if (/^(fail|failed|failure|false|0|no|red|collision|error|timeout)$/.test(s)) return 'fail'
   return undefined
 }
-const truthy = (raw: string) => /^(true|1|yes|y|collision)$/i.test(raw.trim())
+/** Reads a collision cell: a word, or a count (pandas writes booleans next to blanks as 1.0 and 0.0). Undefined when it says neither. */
+export function toCollision(raw: string): boolean | undefined {
+  const s = raw.trim().toLowerCase()
+  if (/^(true|t|yes|y|collision|collided|crash|crashed|hit)$/.test(s)) return true
+  if (/^(false|f|no|n|none|no[ _-]collision)$/.test(s)) return false
+  const n = parseNum(s)
+  return n >= 0 ? n > 0 : undefined
+}
+const isBlank = (raw: string) => /^(null|nan|na|n\/a|-)?$/i.test(raw.trim())
+/** Metrics with an upper limit. Loggers that write braking as negative acceleration or offsets left/right give them a sign. */
+const SIZED = new Set<Role>(['maxDecel', 'maxJerk', 'laneDev'])
 
 const niceFloor = (x: number) => { const m = 10 ** Math.floor(Math.log10(Math.abs(x) || 1)) / 2; return Math.floor(x / m) * m }
 const niceCeil = (x: number) => { const m = 10 ** Math.floor(Math.log10(Math.abs(x) || 1)) / 2; return Math.ceil(x / m) * m }
@@ -104,6 +114,7 @@ export function validateTable(headers: string[], rows: string[][], lines: number
   const issues: Issue[] = []
   const runs: Run[] = []
   const ids = new Set<string>()
+  const signed = new Set<number>()
   const byKey = new Map(odd.map(d => [d.key, d]))
   let skipped = 0
   if (!map.includes('param')) issues.push({ line: 1, level: 'error', message: 'No column is mapped to an ODD parameter, so there is nothing to measure coverage on.' })
@@ -122,7 +133,12 @@ export function validateTable(headers: string[], rows: string[][], lines: number
         if (!raw) return
         outcome = toOutcome(raw)
         if (!outcome) issues.push({ line, level: 'warning', message: `Result "${raw}" is not a recognised pass/fail value; treated as not reported.` })
-      } else if (role === 'collision') { if (raw) metrics.collision = truthy(raw) }
+      } else if (role === 'collision') {
+        if (isBlank(raw)) return
+        const hit = toCollision(raw)
+        if (hit === undefined) issues.push({ line, level: 'warning', message: `Collision "${raw}" is not a yes/no value or a count; treated as not reported.` })
+        else metrics.collision = hit
+      }
       else if (role === 'param') {
         const key = norm(h), d = byKey.get(key)
         if (!d) return
@@ -140,7 +156,8 @@ export function validateTable(headers: string[], rows: string[][], lines: number
         if (!raw) return
         const x = parseNum(raw)
         if (!Number.isFinite(x)) { issues.push({ line, level: 'warning', message: `${ROLE_LABEL[role]} "${raw}" is not a number; ignored.` }); return }
-        metrics[role] = x
+        if (x < 0 && SIZED.has(role) && !signed.has(c)) { signed.add(c); issues.push({ line, level: 'warning', message: `${h} has negative values; they are judged by size (${raw} as ${-x}).` }) }
+        metrics[role] = SIZED.has(role) ? Math.abs(x) : x
       }
     })
     if (bad) { skipped++; return }
