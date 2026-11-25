@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { csvTable } from './parse.ts'
 import { clusterFailures, extractRules, kmeans, normalise, ruleMatches } from './cluster.ts'
-import { binOf, coverage, findGaps, judge } from './coverage.ts'
+import { binOf, coverage, findGaps, judge, judgeAll } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
 import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
 import { parseCsv } from './csv.ts'
+import { freeTrajKey, trajTargets } from './parse.ts'
 import { recommend, recsToCsv, recsToXosc } from './recommend.ts'
 import { DEFAULT_THRESHOLDS, simulate } from './sample.ts'
 import type { Odd, Run, TrajRow } from './types.ts'
@@ -45,6 +47,14 @@ test('coverage: runs outside the ODD are counted and excluded from cells', () =>
   const c = coverage(ODD, [run('a', 'snow', 65, 10), run('b', 'clear', 65, 10)])
   assert.equal(c.outside, 1)
   assert.equal(c.pairs[0].counts.flat().reduce((s, x) => s + x, 0), 1)
+})
+
+test('bins are whole numbers and one dimension has no pairs', () => {
+  const dim = (bins?: number): Odd => [{ key: 'g', label: 'G', kind: 'range', min: 0, max: 10, bins }]
+  assert.deepEqual([2.5, 1.2, 0, -3, 99, NaN, undefined, 4].map(b => coverage(dim(b), []).oneWay[0].total), [3, 1, 1, 1, 20, 5, 5, 4])
+  const c = coverage(dim(5), [{ id: 'a', scenario: 'a', params: { g: 3 }, metrics: {} }])
+  assert.deepEqual([c.pairs.length, c.totalCells, c.oneWayPct], [0, 0, 0.2])
+  assert.deepEqual(findGaps(dim(5), c), [])
 })
 
 test('findGaps lists every uncovered pair cell, riskiest first', () => {
@@ -280,6 +290,35 @@ test('CARLA scenario_runner JSON: criteria become verdicts and attach by scenari
   assert.equal(a.runs[1].outcome, 'fail')
 })
 
+test('CARLA: no verdict is not a pass, status words are whole, collisions without a result fail', () => {
+  const one = (o: object) => parseCarla(JSON.stringify([{ scenario: 'a', ...o }]))[0].outcome
+  assert.equal(one({ criteria: [] }), undefined)
+  assert.equal(one({ status: 'UNKNOWN' }), undefined)
+  assert.equal(one({ status: 'UNSUCCESSFUL' }), 'fail')
+  assert.equal(one({ status: 'not passed' }), 'fail')
+  assert.equal(one({ status: 'Success' }), 'pass')
+  assert.equal(one({ success: true }), 'pass')
+  assert.equal(one({ criteria: [{ name: 'X', actual: 1, result: 'ACCEPTABLE' }] }), 'pass')
+  assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 1 }] }), 'fail')
+  assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 0, result: 'RUNNING' }] }), undefined)
+  assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 0, result: 'SUCCESS' }] }), 'pass')
+  assert.equal(one({ success: true, criteria: [{ name: 'CollisionTest', actual: 1, success: false }] }), 'fail')
+  for (const bad of ['[]', '{"_checkpoint":{"records":[]}}', '[null]', '[1]']) assert.throws(() => parseCarla(bad))
+})
+
+test('CARLA: repetitions fail if one failed, whatever the order; shared scenario names are not guessed', () => {
+  const run = (id: string, scenario = id): Run => ({ id, scenario, params: {}, metrics: {} })
+  const bad = { scenario: 'a', outcome: 'fail' as const, reason: 'hit', metrics: { collision: true } }, good = { scenario: 'a', outcome: 'pass' as const, metrics: { collision: false } }
+  for (const list of [[bad, good], [good, bad]]) {
+    const r = attachResults([run('a')], list).runs[0]
+    assert.deepEqual([r.outcome, r.reason, r.metrics.collision], ['fail', 'hit', true])
+  }
+  // A new import is a re-run and replaces the earlier verdict.
+  assert.equal(attachResults(attachResults([run('a')], [bad]).runs, [good]).runs[0].outcome, 'pass')
+  const shared = attachResults([run('r1', 'a'), run('r2', 'a')], [bad])
+  assert.deepEqual([shared.matched, shared.unmatched.length, shared.runs[0].outcome], [0, 1, undefined])
+})
+
 test('parameter CSV: auto-mapping, inferred ODD and line-numbered validation', () => {
   const text = 'run_id,weather,ego_speed_kmh,min_ttc,result\nr1,clear,80,2.5,pass\nr2,rain,fast,1.1,fail\nr3,fog,95,,maybe\nr1,clear,140,3,pass\n'
   assert.equal(detect('runs.csv', text), 'param-csv')
@@ -301,6 +340,46 @@ test('parameter CSV: auto-mapping, inferred ODD and line-numbered validation', (
   assert.equal(v.runs[0].metrics.ttc, 2.5)
 })
 
+test('collision cells: counts, floats and words; anything else is unknown and reported', () => {
+  const table = (cell: string) => validateTable(['run_id', 'weather', 'collision'], [['a', 'rain', cell]], [2], ['id', 'param', 'collision'], [{ key: 'weather', label: 'Weather', kind: 'category', categories: ['rain'] }])
+  for (const c of ['1', '1.0', '2', 'TRUE', 'T', 'yes', 'crash', 'Collision']) assert.equal(table(c).runs[0].metrics.collision, true, c)
+  for (const c of ['0', '0.0', 'False', 'f', 'no', 'none']) assert.equal(table(c).runs[0].metrics.collision, false, c)
+  for (const c of ['unknown', '-1', 'maybe', '1?']) { const v = table(c); assert.equal('collision' in v.runs[0].metrics, false, c); assert.equal(v.issues.length, 1, c) }
+  for (const c of ['', 'NaN', 'n/a']) { const v = table(c); assert.equal('collision' in v.runs[0].metrics, false, c); assert.equal(v.issues.length, 0, c) }
+})
+
+test('signed braking, jerk and lane offset are judged by size; TTC and gap keep their sign', () => {
+  const v = validateTable(['w', 'd', 'j', 'l', 't', 'g'], [['a', '-7.2', '-13', '-1.4', '-1', '-0.2'], ['a', '-6', '1', '1', '2', '2']], [2, 3], ['param', 'maxDecel', 'maxJerk', 'laneDev', 'ttc', 'minDist'], [{ key: 'w', label: 'w', kind: 'category', categories: ['a'] }])
+  assert.deepEqual(v.runs[0].metrics, { maxDecel: 7.2, maxJerk: 13, laneDev: 1.4, ttc: -1, minDist: -0.2 })
+  assert.equal(v.issues.length, 3)
+})
+
+test('damaged and foreign files are refused', () => {
+  assert.throws(() => csvTable('a,b\n1,"x\n2,y\n'), /line 2/)
+  assert.throws(() => csvTable('a,b\n1,"x\ny"\n2,"z'), /line 4/)
+  for (const bad of ['PK\x03\x04a,b\n1,2\n', '\uFFFD\uFFFDa\0,\0b\0\n\0', 'a,b\n1,\x02\n', '\uFEFF<html>\na,b\n', '<?xml version="1.0"?>\n<a/>\n']) assert.throws(() => csvTable(bad))
+  // A quoted line break, a Latin-1 degree sign (decoded as U+FFFD) and an inch mark are all fine.
+  assert.deepEqual(csvTable('\uFEFFa,b\r\n"1\n2",20\uFFFDC\r\n3,5"\r\n').rows, [['1\n2', '20\uFFFDC'], ['3', '5"']])
+})
+
+test('rows with the wrong number of cells are skipped; trailing blanks are not extra cells', () => {
+  const run = (text: string) => { const t = csvTable(text), map = autoMap(t.headers), odd = inferOdd(t.headers, t.rows, map); return { odd, v: validateTable(t.headers, t.rows, t.lines, map, odd) } }
+  const { odd, v } = run('run_id,weather,gap,result\na,rain,3,5,fail\nb,rain,900\nc,dry,5,fail\nd,dry,6,pass,,\ne,dry,7,\n')
+  assert.deepEqual(v.runs.map(r => r.id), ['c', 'd', 'e'])
+  assert.deepEqual([v.skipped, v.issues.map(i => [i.line, i.level])], [2, [[2, 'error'], [3, 'error']]])
+  assert.equal(odd.find(d => d.key === 'gap')!.max, 7)
+  assert.equal(run('run_id,weather,,\na,rain\nb,dry,,\n').v.runs.length, 2)
+  assert.equal(run('run_id,weather,\na,rain,stray,more\nb,dry\n').v.runs.length, 1)
+})
+
+test('two columns with one key block the import until one is ignored', () => {
+  const h = ['run_id', 'Ego Speed', 'ego_speed'], rows = [['a', '1', '5']]
+  const odd = inferOdd(h, rows, autoMap(h))
+  assert.deepEqual(odd.map(d => d.key), ['ego_speed'])
+  assert.deepEqual(validateTable(h, rows, [2], autoMap(h), odd).issues.filter(i => i.level === 'error').map(i => [i.line, i.level]), [[1, 'error']])
+  assert.equal(validateTable(h, rows, [2], ['id', 'param', 'ignore'], odd).issues.length, 0)
+})
+
 test('JSON parameter tables flatten nested params and metrics', () => {
   const t = jsonTable(JSON.stringify({ runs: [{ id: 'a', params: { weather: 'rain', speed: 80 }, metrics: { min_ttc: 2 } }] }))
   assert.deepEqual(t.headers, ['id', 'weather', 'speed', 'min_ttc'])
@@ -316,4 +395,35 @@ test('trajectory CSV: multi-run files split by run id, degrees converted, speeds
   assert.ok(Math.abs(t.byRun.get('A')![2].h + Math.PI / 2) < 1e-9)
   assert.equal(t.byRun.get('A')![0].v, 20)
   assert.equal(t.issues.filter(i => i.level === 'error')[0].line, 6)
+})
+
+test('trajectories go to one campaign and never replace another campaign\'s trajectory', () => {
+  const run = (id: string, extra: Partial<Run> = {}): Run => ({ id, scenario: id, params: {}, metrics: {}, ...extra })
+  const one = { id: 'c1', label: 'One', date: '2026-01-01', runs: [run('a', { traj: true }), run('only1')] }
+  const two = { id: 'c2', label: 'Two', date: '2026-02-01', runs: [run('a'), run('b')] }
+  const t = trajTargets([one, two], ['a', 'b', 'only1', 'new'])
+  assert.deepEqual([...t.target], [['a', 'c2'], ['b', 'c2'], ['only1', 'c1']])
+  assert.deepEqual(t.shared, ['a'])
+  assert.equal(trajTargets([one, two], ['a', 'b'], 'c1').target.get('a'), 'c1')
+  assert.equal(freeTrajKey([one, two], 'c2', two.runs[0]), 'c2:a')
+  assert.equal(freeTrajKey([one, two], 'c1', one.runs[0]), 'a')
+  assert.equal(freeTrajKey([one, two], 'c2', two.runs[1]), 'b')
+  // Projects saved before this fix: both runs point at one trajectory.
+  const both = [{ ...one }, { ...two, runs: [run('a', { traj: true })] }]
+  assert.equal(freeTrajKey(both, 'c2', both[1].runs[0]), 'c2:a')
+})
+
+test('planned runs are covered but not judged', () => {
+  const odd: Odd = [{ key: 'g', label: 'Gap', kind: 'range', min: 0, max: 50, bins: 5 }, { key: 'w', label: 'W', kind: 'category', categories: ['a', 'b'] }]
+  const mk = (id: string, g: number, ttc?: number): Run => ({ id, scenario: id, params: { g, w: 'a' }, metrics: ttc === undefined ? {} : { ttc } })
+  const runs = [mk('f', 5, 1), mk('p', 8), mk('k', 45, 4)]
+  const v = judgeAll(runs, DEFAULT_THRESHOLDS), cov = coverage(odd, runs, v)
+  assert.deepEqual([cov.oneWay[0].hits, cov.oneWay[0].judged, cov.oneWay[0].fails], [[2, 0, 0, 0, 1], [1, 0, 0, 0, 1], [1, 0, 0, 0, 0]])
+  assert.deepEqual([cov.pairs[0].counts[0][0], cov.pairs[0].judged[0][0], cov.pairs[0].fails[0][0]], [2, 1, 1])
+  // g bin 1 fails 1 of 1, w=b was never run (0.5): priority 1.5.
+  assert.equal(findGaps(odd, cov).find(g => g.ai === 0 && g.bi === 1)!.priority, 1.5)
+  const failed = v.map(x => x.status === 'fail'), passed = v.map(x => x.status === 'pass')
+  const probes = (p: boolean[]) => recommend(odd, runs, failed, { n: 4, boundaryShare: 1, passed: p }).filter(r => r.kind === 'boundary')
+  assert.ok(probes(passed).length && probes(passed).every(r => /passing k/.test(r.reason)))
+  assert.equal(probes([false, false, false]).length, 0)
 })

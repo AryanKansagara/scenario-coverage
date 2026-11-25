@@ -58,11 +58,12 @@ export interface Analysis {
   runs: Run[]
   verdicts: Verdict[]
   failed: boolean[]
+  passed: boolean[]
   cov: Coverage
   gaps: Gap[]
   rules: Rule[]
   clusters: FailureCluster[]
-  clusterOf: Map<string, number>
+  clusterOf: Map<Run, number>
   fails: number
   untested: number
 }
@@ -70,14 +71,17 @@ export interface Analysis {
 export function analyse(odd: Odd, runs: Run[], th: Project['thresholds']): Analysis {
   const verdicts = judgeAll(runs, th)
   const failed = verdicts.map(v => v.status === 'fail')
+  const passed = verdicts.map(v => v.status === 'pass')
+  // Planned runs count towards coverage but say nothing about where the stack fails.
+  const judged = runs.filter((_, i) => verdicts[i].status !== 'untested'), judgedFail = failed.filter((_, i) => verdicts[i].status !== 'untested')
   const cov = coverage(odd, runs, verdicts)
   const failedRuns = runs.filter((_, i) => failed[i])
   const clusters = clusterFailures(odd, failedRuns)
-  const clusterOf = new Map<string, number>()
-  clusters.forEach(c => c.runs.forEach(r => clusterOf.set(r.id, c.id)))
+  const clusterOf = new Map<Run, number>()
+  clusters.forEach(c => c.runs.forEach(r => clusterOf.set(r, c.id)))
   return {
-    runs, verdicts, failed, cov, gaps: findGaps(odd, cov),
-    rules: extractRules(odd, runs, failed, { minSupport: Math.max(3, Math.round(runs.length / 120)) }),
+    runs, verdicts, failed, passed, cov, gaps: findGaps(odd, cov),
+    rules: extractRules(odd, judged, judgedFail, { minSupport: Math.max(3, Math.round(judged.length / 120)) }),
     clusters, clusterOf, fails: failedRuns.length, untested: verdicts.filter(v => v.status === 'untested').length,
   }
 }
@@ -92,7 +96,7 @@ export function useAnalysis(p: Project | null, scope: string) {
   return useMemo(() => p && p.odd.length ? analyse(p.odd, scopeRuns(p, scope), p.thresholds) : null, [p?.odd, p?.campaigns, p?.thresholds, scope])
 }
 
-/** Cumulative coverage after each campaign, oldest first. */
+/** Cumulative coverage after each campaign, oldest first. The failure rate is NaN when no run was judged. */
 export function trend(p: Project) {
   const list = sortCampaigns(p.campaigns)
   const out: { id: string; label: string; date: string; pairwise: number; oneWay: number; failRate: number; runs: number; cumRuns: number }[] = []
@@ -102,7 +106,7 @@ export function trend(p: Project) {
     const cum = coverage(p.odd, acc)
     const v = judgeAll(c.runs, p.thresholds)
     const judged = v.filter(x => x.status !== 'untested').length
-    out.push({ id: c.id, label: c.label, date: c.date, pairwise: cum.pairwisePct, oneWay: cum.oneWayPct, failRate: judged ? v.filter(x => x.status === 'fail').length / judged : 0, runs: c.runs.length, cumRuns: acc.length })
+    out.push({ id: c.id, label: c.label, date: c.date, pairwise: cum.pairwisePct, oneWay: cum.oneWayPct, failRate: judged ? v.filter(x => x.status === 'fail').length / judged : NaN, runs: c.runs.length, cumRuns: acc.length })
   }
   return out
 }

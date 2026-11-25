@@ -1,11 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
-import { parseCsv } from './engine/csv.ts'
+import { csvTable } from './engine/parse.ts'
 import { computeMetrics, toTracks } from './engine/metrics.ts'
 import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
 import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
+import { wholeBins } from './engine/coverage.ts'
 import { createSampleProject } from './projectData.ts'
 import { TH_FIELDS } from './Settings.tsx'
 import { putData, sortCampaigns, uuid, type Project, type TrajStore } from './store.ts'
+import { freeTrajKey, trajTargets } from './engine/parse.ts'
 import { ask, fmtN, go, Link, toast } from './ui.tsx'
 
 interface Props { project: Project; traj: TrajStore; update(p: Partial<Project>): Promise<unknown> }
@@ -42,7 +44,7 @@ export default function DataTab({ project, traj, update }: Props) {
         list.forEach((f, i) => { const t = parseTrajectories(texts[i], f.name.replace(/\.[^.]+$/, '')); t.byRun.forEach((v, k) => byRun.set(k, [...(byRun.get(k) ?? []), ...v])); issues.push(...t.issues.map(x => ({ ...x, message: list.length > 1 ? `${f.name}: ${x.message}` : x.message }))); degrees ||= t.degrees })
         setStaged({ kind: 'traj', fileName: list.map(f => f.name).join(', '), byRun, issues, degrees })
       } else {
-        const t = fmt === 'param-json' ? jsonTable(texts[0]) : (() => { const { rows, lines } = parseCsv(texts[0]); return { headers: rows[0] ?? [], rows: rows.slice(1), lines: lines.slice(1) } })()
+        const t = fmt === 'param-json' ? jsonTable(texts[0]) : csvTable(texts[0])
         if (!t.headers.length || !t.rows.length) throw new Error('The file has a header but no data rows.')
         setStaged({ kind: 'table', format: fmt, fileName: list[0].name, ...t, map: autoMap(t.headers) })
       }
@@ -183,9 +185,13 @@ function CarlaImport({ s, project, update, done }: { s: Extract<Staged, { kind: 
   const camp = list.find(c => c.id === target)
   const res = useMemo(() => attachResults(camp?.runs ?? [], s.results), [camp, s.results])
   const fails = s.results.filter(r => r.outcome === 'fail').length
+  const open = s.results.filter(r => !r.outcome).length
   const commit = async () => {
     if (camp) {
-      const extra: Run[] = res.unmatched.map((r, i) => ({ id: `${r.scenario}-${i + 1}`, scenario: r.scenario, params: {}, metrics: r.metrics, outcome: r.outcome, reason: r.reason }))
+      // A result imported again must not reuse the id it got the first time.
+      const ids = new Set(camp.runs.map(r => r.id))
+      const freeId = (name: string, k: number) => { while (ids.has(`${name}-${k}`)) k++; ids.add(`${name}-${k}`); return `${name}-${k}` }
+      const extra: Run[] = res.unmatched.map((r, i) => ({ id: freeId(r.scenario, i + 1), scenario: r.scenario, params: {}, metrics: r.metrics, outcome: r.outcome, reason: r.reason }))
       await update({ campaigns: project.campaigns.map(c => c.id === camp.id ? { ...c, runs: [...res.runs, ...extra] } : c), imports: [...project.imports, { id: uuid(), kind: 'carla-json', fileName: s.fileName, rows: s.results.length, skipped: 0, at: Date.now(), campaign: camp.id }] })
       toast(`Attached ${res.matched} results to “${camp.label}”`, { tone: 'ok' })
       go(`/app/p/${project.id}/failures`)
@@ -196,20 +202,23 @@ function CarlaImport({ s, project, update, done }: { s: Extract<Staged, { kind: 
     done()
   }
   return <>
-    <p><b>{s.fileName}</b> · CARLA results for <b>{s.results.length}</b> scenarios, <b className="error">{fails} failed</b>.</p>
+    <p><b>{s.fileName}</b> · CARLA results for <b>{s.results.length}</b> scenarios, <b className="error">{fails} failed</b>{open ? <span className="warn-text">, {open} without a verdict (kept as not run yet)</span> : null}.</p>
     <label className="field"><span>Attach to campaign (matched by scenario name or run id)</span>
       <select value={target} onChange={e => setTarget(e.target.value)}>{list.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}<option value="new">New campaign with only these results</option></select>
     </label>
-    {camp ? <p className="small">{res.matched} matched · <span className={res.unmatched.length ? 'warn-text' : ''}>{res.unmatched.length} unmatched</span>{res.unmatched.length ? ` (${res.unmatched.slice(0, 5).map(u => u.scenario).join(', ')}${res.unmatched.length > 5 ? '…' : ''}) will be added without ODD parameters and count as outside the ODD.` : ''}</p>
+    {camp ? <p className="small">{res.matched} matched · <span className={res.unmatched.length ? 'warn-text' : ''}>{res.unmatched.length} unmatched</span>{res.unmatched.length ? ` (${res.unmatched.slice(0, 5).map(u => u.scenario).join(', ')}${res.unmatched.length > 5 ? '…' : ''}) match no run, or a scenario name several runs share; they will be added without ODD parameters and count as outside the ODD.` : ''}</p>
       : <p className="warn-text small">Without a catalog the runs have no ODD parameters: verdicts and failure reasons are kept, but they cannot count towards coverage until a parameter table is imported.</p>}
     <div className="row gap"><button type="button" className="btn primary" onClick={() => void commit()}>Import results</button><button type="button" className="btn ghost" onClick={done}>Cancel</button></div>
   </>
 }
 
 function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { kind: 'traj' }>; project: Project; traj: TrajStore; update: Props['update']; done(): void }) {
-  const all = project.campaigns.flatMap(c => c.runs)
   const ids = [...s.byRun.keys()]
-  const matched = ids.filter(id => all.some(r => r.id === id))
+  const list = sortCampaigns(project.campaigns)
+  const [prefer, setPrefer] = useState<string>()
+  const { target, shared } = trajTargets(list, ids, prefer)
+  const matched = [...target.keys()]
+  const choices = list.filter(c => c.runs.some(r => shared.includes(r.id)))
   const [busy, setBusy] = useState(false)
   // Files without length/width columns need a footprint for the ego; other actors default to a 4.8 x 1.9 m car.
   const egoOf = (rows: TrajRow[]) => { try { return toTracks(rows).ego.id } catch { return '' } }
@@ -223,23 +232,34 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
     const store: TrajStore = { ...traj }
     const metrics = new Map<string, Run['metrics']>()
     const failed: string[] = []
+    const keys = new Map<string, string>()
     for (const id of ids) {
-      try { metrics.set(id, computeMetrics(s.byRun.get(id)!, { laneWidth: project.laneWidth }).metrics); store[id] = s.byRun.get(id)! } catch (e) { failed.push(`${id}: ${(e as Error).message}`) }
+      try { metrics.set(id, computeMetrics(s.byRun.get(id)!, { laneWidth: project.laneWidth }).metrics) } catch (e) { failed.push(`${id}: ${(e as Error).message}`) }
     }
-    let campaigns = project.campaigns.map(c => ({ ...c, runs: c.runs.map(r => metrics.has(r.id) ? { ...r, metrics: { ...r.metrics, ...metrics.get(r.id) }, traj: true } : r) }))
+    let campaigns = project.campaigns.map(c => ({ ...c, runs: c.runs.map(r => {
+      if (!metrics.has(r.id) || target.get(r.id) !== c.id) return r
+      const key = freeTrajKey(project.campaigns, c.id, r)
+      keys.set(r.id, key)
+      const { trajKey: _, ...rest } = r
+      return { ...rest, metrics: { ...r.metrics, ...metrics.get(r.id) }, traj: true, ...(key === r.id ? {} : { trajKey: key }) }
+    }) }))
     const extra = ids.filter(id => metrics.has(id) && !matched.includes(id))
     if (extra.length) campaigns = sortCampaigns([...campaigns, { id: uuid(), label: `Trajectories ${today()}`, date: today(), source: 'Trajectories', runs: extra.map(id => ({ id, scenario: id, params: {}, metrics: metrics.get(id)!, traj: true })) }])
+    for (const id of metrics.keys()) store[keys.get(id) ?? id] = s.byRun.get(id)!
     await putData(project.id, store)
     await update({ campaigns, dataMissing: false, imports: [...project.imports, { id: uuid(), kind: 'trajectory-csv', fileName: s.fileName, rows: ids.length, skipped: failed.length, at: Date.now() }] })
     toast(`Measured ${metrics.size} run${metrics.size === 1 ? '' : 's'} from trajectories`, { tone: 'ok' })
     if (failed.length) toast(failed.join('; '), { tone: 'error' })
     setBusy(false)
     done()
-    go(`/app/p/${project.id}/replay?run=${encodeURIComponent([...metrics.keys()][0] ?? '')}`)
+    go(`/app/p/${project.id}/replay?run=${encodeURIComponent([...metrics.keys()].map(id => keys.get(id) ?? id)[0] ?? '')}`)
   }
   return <>
     <p><b>{s.fileName}</b> · {ids.length} run{ids.length === 1 ? '' : 's'} · headings in {s.degrees ? 'degrees (converted)' : 'radians'}</p>
     <p className="small">{matched.length} match existing runs by id and will get TTC, PET, min gap, braking, jerk and lane offset recomputed. {ids.length - matched.length ? <span className="warn-text">{ids.length - matched.length} have no matching run ({ids.filter(i => !matched.includes(i)).slice(0, 4).join(', ')}) and go into a new campaign without ODD parameters.</span> : null}</p>
+    {choices.length > 1 && <label className="field"><span>{shared.length} run id{shared.length === 1 ? ' is' : 's are'} used in several campaigns ({shared.slice(0, 4).join(', ')}). These trajectories belong to</span>
+      <select value={choices.some(c => c.id === prefer) ? prefer : choices.at(-1)!.id} onChange={e => setPrefer(e.target.value)}>{choices.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+    </label>}
     {unsized.length > 0 && <>
       <p className="small">{unsized.length === ids.length ? 'The file has' : `${unsized.length} runs have`} no length and width for the ego ({egoOf(s.byRun.get(unsized[0])!)}). TTC, gap and collision checks use this footprint, so set it to your vehicle:</p>
       <div className="inline-fields">
@@ -273,7 +293,7 @@ function OddEditor({ project, update }: { project: Project; update: Props['updat
             <td>{d.kind === 'range'
               ? <div className="row gap-sm"><input className="table-input" type="number" value={d.min} onChange={e => set(i, { min: Number(e.target.value) })} aria-label={`Minimum ${d.key}`} /><span>to</span><input className="table-input" type="number" value={d.max} onChange={e => set(i, { max: Number(e.target.value) })} aria-label={`Maximum ${d.key}`} /></div>
               : <input className="table-input" defaultValue={(d.categories ?? []).join(', ')} onBlur={e => set(i, { categories: e.target.value.split(',').map(x => x.trim()).filter(Boolean) })} aria-label={`Categories of ${d.key}`} />}</td>
-            <td>{d.kind === 'range' ? <input className="table-input narrow" type="number" min="1" max="20" value={d.bins ?? 5} onChange={e => set(i, { bins: Math.max(1, Math.min(20, Number(e.target.value))) })} aria-label={`Bins for ${d.key}`} /> : <span className="muted small">{d.categories?.length ?? 0}</span>}</td>
+            <td>{d.kind === 'range' ? <input className="table-input narrow" type="number" min="1" max="20" value={d.bins ?? 5} onChange={e => set(i, { bins: wholeBins(Number(e.target.value)) })} aria-label={`Bins for ${d.key}`} /> : <span className="muted small">{d.categories?.length ?? 0}</span>}</td>
             <td><input className="table-input narrow" value={d.unit ?? ''} onChange={e => set(i, { unit: e.target.value || undefined })} aria-label={`Unit of ${d.key}`} /></td>
             <td><button type="button" className="btn danger-ghost sm" onClick={async () => {
               if (!(await ask(`Remove ${d.label} from the ODD?`, 'Runs keep the value; it just stops counting towards coverage. You can undo for a few seconds.', 'Remove'))) return

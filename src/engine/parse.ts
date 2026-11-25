@@ -1,5 +1,6 @@
 import { parseCsv, parseNum } from './csv.ts'
-import type { Metrics, Odd, OddParam, Params, Run, TrajRow } from './types.ts'
+import { trajKey } from './types.ts'
+import type { Campaign, Metrics, Odd, OddParam, Params, Run, TrajRow } from './types.ts'
 
 export type Format = 'param-csv' | 'param-json' | 'xosc' | 'carla-json' | 'trajectory-csv'
 export const FORMATS: Record<Format, string> = {
@@ -33,6 +34,31 @@ export function detect(fileName: string, text: string): Format {
 }
 
 // ---------- Parameter tables ----------
+
+const unclosed = (line: number) => new Error(`The quote opened on line ${line} is never closed. The file is damaged or cut off.`)
+
+/** Why a file cannot be a text table, or null. */
+export function notText(text: string): string | null {
+  if (/^PK\x03\x04/.test(text)) return 'This is an Excel workbook or ZIP archive. Save the sheet as CSV first.'
+  if (/^\uFFFD\uFFFD/.test(text) || /[\x00-\x08\x0e-\x1f]/.test(text)) return 'This is not a UTF-8 text file. Save it as CSV (UTF-8) first.'
+  if (/^[\s\uFEFF]*<[!?a-z]/i.test(text)) return 'This is an HTML or XML document, not a table.'
+  return null
+}
+
+/** Reads a CSV parameter table; throws when the file is not one or is damaged beyond a single row. */
+export function csvTable(text: string): { headers: string[]; rows: string[][]; lines: number[] } {
+  const why = notText(text)
+  if (why) throw new Error(why)
+  const { rows, lines, openQuote } = parseCsv(text)
+  if (openQuote) throw unclosed(openQuote)
+  return { headers: rows[0] ?? [], rows: rows.slice(1), lines: lines.slice(1) }
+}
+
+/** Cells cannot be told apart in a row with the wrong number of them. Blank cells past the last named column do not count. */
+const cellsFit = (headers: string[], row: string[]) => {
+  const n = headers.findLastIndex(h => h.trim()) + 1
+  return row.length >= n && row.slice(n).every((c, i) => !c.trim() || n + i < headers.length)
+}
 
 export type Role = 'id' | 'scenario' | 'outcome' | 'reason' | 'param' | 'ignore' | keyof Metrics
 export const ROLE_LABEL: Record<Role, string> = { id: 'Run id', scenario: 'Scenario name', outcome: 'Pass / fail', reason: 'Failure reason', param: 'ODD parameter', ignore: 'Ignore', ttc: 'Min TTC (s)', pet: 'Min PET (s)', minDist: 'Min distance (m)', maxDecel: 'Max decel (m/s²)', maxJerk: 'Max jerk (m/s³)', laneDev: 'Lane offset (m)', collision: 'Collision' }
@@ -68,7 +94,17 @@ export function toOutcome(raw: string): 'pass' | 'fail' | undefined {
   if (/^(fail|failed|failure|false|0|no|red|collision|error|timeout)$/.test(s)) return 'fail'
   return undefined
 }
-const truthy = (raw: string) => /^(true|1|yes|y|collision)$/i.test(raw.trim())
+/** Reads a collision cell: a word, or a count (pandas writes booleans next to blanks as 1.0 and 0.0). Undefined when it says neither. */
+export function toCollision(raw: string): boolean | undefined {
+  const s = raw.trim().toLowerCase()
+  if (/^(true|t|yes|y|collision|collided|crash|crashed|hit)$/.test(s)) return true
+  if (/^(false|f|no|n|none|no[ _-]collision)$/.test(s)) return false
+  const n = parseNum(s)
+  return n >= 0 ? n > 0 : undefined
+}
+const isBlank = (raw: string) => /^(null|nan|na|n\/a|-)?$/i.test(raw.trim())
+/** Metrics with an upper limit. Loggers that write braking as negative acceleration or offsets left/right give them a sign. */
+const SIZED = new Set<Role>(['maxDecel', 'maxJerk', 'laneDev'])
 
 const niceFloor = (x: number) => { const m = 10 ** Math.floor(Math.log10(Math.abs(x) || 1)) / 2; return Math.floor(x / m) * m }
 const niceCeil = (x: number) => { const m = 10 ** Math.floor(Math.log10(Math.abs(x) || 1)) / 2; return Math.ceil(x / m) * m }
@@ -76,9 +112,10 @@ const niceCeil = (x: number) => { const m = 10 ** Math.floor(Math.log10(Math.abs
 /** Guesses an ODD from the parameter columns: mostly-numeric columns become ranges, the rest categories. */
 export function inferOdd(headers: string[], rows: string[][], map: Mapping): Odd {
   const odd: Odd = []
+  const fit = rows.filter(r => cellsFit(headers, r))
   headers.forEach((h, c) => {
-    if (map[c] !== 'param') return
-    const vals = rows.map(r => (r[c] ?? '').trim()).filter(v => v !== '')
+    if (map[c] !== 'param' || odd.some(d => d.key === norm(h))) return
+    const vals = fit.map(r => (r[c] ?? '').trim()).filter(v => v !== '')
     if (!vals.length) return
     const nums = vals.map(parseNum).filter(Number.isFinite)
     const key = norm(h)
@@ -104,12 +141,21 @@ export function validateTable(headers: string[], rows: string[][], lines: number
   const issues: Issue[] = []
   const runs: Run[] = []
   const ids = new Set<string>()
+  const signed = new Set<number>()
   const byKey = new Map(odd.map(d => [d.key, d]))
   let skipped = 0
   if (!map.includes('param')) issues.push({ line: 1, level: 'error', message: 'No column is mapped to an ODD parameter, so there is nothing to measure coverage on.' })
+  const taken = new Map<string, string>()
+  headers.forEach((h, c) => {
+    if (map[c] !== 'param') return
+    const first = taken.get(norm(h))
+    if (first === undefined) taken.set(norm(h), h)
+    else issues.push({ line: 1, level: 'error', message: `Columns "${first}" and "${h}" are the same parameter (${norm(h)}). Set one of them to Ignore.` })
+  })
   rows.forEach((row, ri) => {
     const line = lines[ri]
     if (row.every(c => !c.trim())) return
+    if (!cellsFit(headers, row)) { skipped++; issues.push({ line, level: 'error', message: `Row skipped: it has ${row.length} cells, the header has ${headers.length}. A value with the column separator in it must be quoted.` }); return }
     const params: Params = {}, metrics: Metrics = {}
     let id = '', scenario = '', outcome: Run['outcome'], reason: string | undefined, bad = false
     headers.forEach((h, c) => {
@@ -122,7 +168,12 @@ export function validateTable(headers: string[], rows: string[][], lines: number
         if (!raw) return
         outcome = toOutcome(raw)
         if (!outcome) issues.push({ line, level: 'warning', message: `Result "${raw}" is not a recognised pass/fail value; treated as not reported.` })
-      } else if (role === 'collision') { if (raw) metrics.collision = truthy(raw) }
+      } else if (role === 'collision') {
+        if (isBlank(raw)) return
+        const hit = toCollision(raw)
+        if (hit === undefined) issues.push({ line, level: 'warning', message: `Collision "${raw}" is not a yes/no value or a count; treated as not reported.` })
+        else metrics.collision = hit
+      }
       else if (role === 'param') {
         const key = norm(h), d = byKey.get(key)
         if (!d) return
@@ -140,7 +191,8 @@ export function validateTable(headers: string[], rows: string[][], lines: number
         if (!raw) return
         const x = parseNum(raw)
         if (!Number.isFinite(x)) { issues.push({ line, level: 'warning', message: `${ROLE_LABEL[role]} "${raw}" is not a number; ignored.` }); return }
-        metrics[role] = x
+        if (x < 0 && SIZED.has(role) && !signed.has(c)) { signed.add(c); issues.push({ line, level: 'warning', message: `${h} has negative values; they are judged by size (${raw} as ${-x}).` }) }
+        metrics[role] = SIZED.has(role) ? Math.abs(x) : x
       }
     })
     if (bad) { skipped++; return }
@@ -416,7 +468,8 @@ export function xoscOdd(list: Xosc[], runs: Run[]): Odd {
 
 // ---------- CARLA scenario_runner ----------
 
-export interface CarlaResult { scenario: string; outcome: 'pass' | 'fail'; reason?: string; metrics: Metrics }
+/** No outcome means the record states no verdict, so the run stays "not run yet". */
+export interface CarlaResult { scenario: string; outcome?: 'pass' | 'fail'; reason?: string; metrics: Metrics }
 
 /**
  * scenario_runner `--json` output ({ scenario, success, criteria: [{ name, actual, expected, result }] }), a list of
@@ -425,46 +478,87 @@ export interface CarlaResult { scenario: string; outcome: 'pass' | 'fail'; reaso
 export function parseCarla(text: string): CarlaResult[] {
   const data = JSON.parse(text)
   const recs = data?._checkpoint?.records
+  const list: unknown[] = Array.isArray(recs) ? recs : Array.isArray(data) ? data : [data]
+  if (!list.length) throw new Error('The results file contains no records.')
+  if (!list.every(r => r !== null && typeof r === 'object' && !Array.isArray(r))) throw new Error('Every result must be a JSON object.')
   if (Array.isArray(recs)) return recs.map((r: { route_id?: string; status?: string; infractions?: Record<string, unknown[]> }) => {
     const inf = Object.entries(r.infractions ?? {}).filter(([, v]) => Array.isArray(v) && v.length)
     const collision = inf.some(([k]) => /collision/i.test(k))
     const ok = /^(completed|perfect)$/i.test(r.status ?? '') && !inf.length
     return { scenario: String(r.route_id ?? 'route'), outcome: ok ? 'pass' : 'fail', reason: ok ? undefined : [r.status, ...inf.map(([k, v]) => `${k} ×${v.length}`)].filter(Boolean).join('; '), metrics: collision ? { collision } : {} }
   })
-  const list: unknown[] = Array.isArray(data) ? data : [data]
   return list.map(raw => {
     const o = raw as { scenario?: string; name?: string; success?: boolean; status?: string; criteria?: Criterion[] }
     const crit = Array.isArray(o.criteria) ? o.criteria : []
     // scenario_runner writes a boolean `success` per criterion; older exports and the console table use a status word.
-    const bad = (c: Criterion) => c.success === false || (c.success === undefined && /fail/i.test(String(c.result ?? c.test_status ?? '')))
-    const failed = crit.filter(c => !c.optional && bad(c))
-    const collision = crit.some(c => /collision/i.test(c.name ?? '') && Number(c.actual) > 0)
-    const success = typeof o.success === 'boolean' ? o.success : o.status ? /success|pass/i.test(o.status) : !failed.length
+    const verdict = (c: Criterion) => typeof c.success === 'boolean' ? c.success : statusWord(c.result ?? c.test_status)
+    const isCollision = (c: Criterion) => /collision/i.test(c.name ?? '') && Number(c.actual) > 0
+    const required = crit.filter(c => !c.optional)
+    const failed = required.filter(c => verdict(c) === false || (verdict(c) === undefined && isCollision(c)))
+    const collision = crit.some(isCollision)
+    const success = typeof o.success === 'boolean' ? o.success : statusWord(o.status) ?? (required.length > 0 && required.every(c => verdict(c) === true) ? true : undefined)
     const metrics: Metrics = {}
     if (crit.some(c => /collision/i.test(c.name ?? ''))) metrics.collision = collision
     const why = (c: Criterion) => `${c.name}: ${typeof c.actual === 'number' ? round6(c.actual) : c.actual}${c.expected === undefined || c.expected === null ? '' : ` (expected ${c.expected})`}`
-    const ok = success && !failed.length
-    return { scenario: String(o.scenario ?? o.name ?? 'scenario'), outcome: ok ? 'pass' : 'fail', reason: failed.length ? failed.map(why).join('; ') : ok ? undefined : 'Reported as failed by scenario_runner', metrics }
+    const outcome = failed.length || success === false ? 'fail' : success ? 'pass' : undefined
+    return { scenario: String(o.scenario ?? o.name ?? 'scenario'), outcome, reason: failed.length ? failed.map(why).join('; ') : outcome === 'fail' ? 'Reported as failed by scenario_runner' : undefined, metrics: outcome || collision ? metrics : {} }
   })
 }
 
 interface Criterion { name?: string; actual?: unknown; expected?: unknown; success?: boolean; result?: string; test_status?: string; optional?: boolean }
 
-/** Attaches CARLA verdicts to runs by scenario name or run id. Unmatched results are returned separately. */
+/** "SUCCESS", "ACCEPTABLE" (within scenario_runner's acceptable value) or "FAILURE" in their usual spellings; undefined for anything else ("RUNNING", "UNKNOWN", nothing). */
+function statusWord(raw: unknown): boolean | undefined {
+  const s = String(raw ?? '').trim()
+  if (/^(success|successful|succeeded|acceptable|pass|passed|ok)$/i.test(s)) return true
+  return /fail|unsuccess|not[ _-]*(success|pass)|error|timeout|collision/i.test(s) ? false : undefined
+}
+
+/**
+ * Attaches CARLA verdicts to runs by run id, else by a scenario name only one run has. Results that match no run, or
+ * several, are returned separately. Repetitions of one run in the same batch fail if any of them failed.
+ */
 export function attachResults(runs: Run[], results: CarlaResult[]): { runs: Run[]; matched: number; unmatched: CarlaResult[] } {
   const out = runs.map(r => ({ ...r }))
   const unmatched: CarlaResult[] = []
   let matched = 0
+  const byName = new Map<string, Run[]>()
+  for (const r of out) { const l = byName.get(r.scenario); if (l) l.push(r); else byName.set(r.scenario, [r]) }
+  const seen = new Set<Run>()
   for (const res of results) {
-    const r = out.find(x => x.id === res.scenario && !x.outcome) ?? out.find(x => x.scenario === res.scenario && !x.outcome) ?? out.find(x => x.id === res.scenario || x.scenario === res.scenario)
+    const named = byName.get(res.scenario) ?? []
+    const r = out.find(x => x.id === res.scenario) ?? (named.length === 1 ? named[0] : undefined)
     if (!r) { unmatched.push(res); continue }
-    r.outcome = res.outcome; r.reason = res.reason; r.metrics = { ...r.metrics, ...res.metrics }
+    const again = seen.has(r), collision = again && r.metrics.collision || res.metrics.collision
+    seen.add(r)
+    r.metrics = { ...r.metrics, ...res.metrics, ...(collision === undefined ? {} : { collision }) }
+    if (again && r.outcome === 'fail') { if (res.outcome === 'fail' && res.reason !== r.reason) r.reason = [r.reason, res.reason].filter(Boolean).join('; ') }
+    else if (res.outcome) { r.outcome = res.outcome; r.reason = res.reason }
     matched++
   }
   return { runs: out, matched, unmatched }
 }
 
 // ---------- Trajectories ----------
+
+/** The campaign each run id belongs to. An id several campaigns use goes to `prefer`, else to the latest of them (the last listed). */
+export function trajTargets(campaigns: Campaign[], ids: string[], prefer?: string): { target: Map<string, string>; shared: string[] } {
+  const target = new Map<string, string>(), shared: string[] = []
+  for (const id of ids) {
+    const has = campaigns.filter(c => c.runs.some(r => r.id === id))
+    if (!has.length) continue
+    if (has.length > 1) shared.push(id)
+    target.set(id, (has.find(c => c.id === prefer) ?? has[has.length - 1]).id)
+  }
+  return { target, shared }
+}
+
+/** Storage key for a run's trajectory that no other run uses. */
+export function freeTrajKey(campaigns: Campaign[], campaign: string, run: Run): string {
+  const others = new Set(campaigns.flatMap(c => c.runs.filter(r => r.traj && !(c.id === campaign && r.id === run.id)).map(trajKey)))
+  if (run.traj && !others.has(trajKey(run))) return trajKey(run)
+  return others.has(run.id) ? `${campaign}:${run.id}` : run.id
+}
 
 export interface TrajParsed { byRun: Map<string, TrajRow[]>; issues: Issue[]; degrees: boolean }
 
@@ -504,6 +598,7 @@ function esminiWide(rows: string[][], lines: number[], fallbackRun: string, issu
  */
 export function parseTrajectories(text: string, fallbackRun: string): TrajParsed {
   const all = parseCsv(text)
+  if (all.openQuote) throw unclosed(all.openQuote)
   const wide = all.rows.findIndex(r => r.some(c => /#1 World_Position_X/.test(c)))
   // Skip banner lines above the header (esmini dat2csv writes "Version: ..., OpenDRIVE: ..." first).
   const start = wide >= 0 ? wide : Math.max(0, all.rows.slice(0, 5).findIndex(isTrajHeader))

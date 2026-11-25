@@ -37,7 +37,11 @@ export interface Run {
   reason?: string
   /** A per-run trajectory is stored on this device. */
   traj?: boolean
+  /** Where that trajectory is stored, when another campaign already has one under this run id. */
+  trajKey?: string
 }
+
+export const trajKey = (r: Run) => r.trajKey ?? r.id
 
 export interface Thresholds {
   ttc: number

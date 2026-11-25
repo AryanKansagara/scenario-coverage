@@ -1,6 +1,7 @@
 
 
-export function parseCsv(text: string): { rows: string[][]; lines: number[] } {
+/** openQuote is the line of a quoted cell the file never closes: everything after it ended up in that one cell. */
+export function parseCsv(text: string): { rows: string[][]; lines: number[]; openQuote?: number } {
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
   const delim = sniffDelimiter(text)
   const rows: string[][] = []
@@ -10,6 +11,7 @@ export function parseCsv(text: string): { rows: string[][]; lines: number[] } {
   let quoted = false
   let line = 1
   let rowLine = 1
+  let quoteLine = 1
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
     if (quoted) {
@@ -21,7 +23,7 @@ export function parseCsv(text: string): { rows: string[][]; lines: number[] } {
       }
       continue
     }
-    if (c === '"' && field === '') quoted = true
+    if (c === '"' && field === '') { quoted = true; quoteLine = line }
     else if (c === delim) { row.push(field); field = '' }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++
@@ -36,7 +38,7 @@ export function parseCsv(text: string): { rows: string[][]; lines: number[] } {
     row.push(field)
     if (row.length > 1 || row[0] !== '') { rows.push(row); lines.push(rowLine) }
   }
-  return { rows, lines }
+  return quoted ? { rows, lines, openQuote: quoteLine } : { rows, lines }
 }
 
 function sniffDelimiter(text: string): string {
