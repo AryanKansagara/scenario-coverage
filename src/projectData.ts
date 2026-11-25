@@ -62,7 +62,7 @@ export interface Analysis {
   gaps: Gap[]
   rules: Rule[]
   clusters: FailureCluster[]
-  clusterOf: Map<string, number>
+  clusterOf: Map<Run, number>
   fails: number
   untested: number
 }
@@ -73,8 +73,8 @@ export function analyse(odd: Odd, runs: Run[], th: Project['thresholds']): Analy
   const cov = coverage(odd, runs, verdicts)
   const failedRuns = runs.filter((_, i) => failed[i])
   const clusters = clusterFailures(odd, failedRuns)
-  const clusterOf = new Map<string, number>()
-  clusters.forEach(c => c.runs.forEach(r => clusterOf.set(r.id, c.id)))
+  const clusterOf = new Map<Run, number>()
+  clusters.forEach(c => c.runs.forEach(r => clusterOf.set(r, c.id)))
   return {
     runs, verdicts, failed, cov, gaps: findGaps(odd, cov),
     rules: extractRules(odd, runs, failed, { minSupport: Math.max(3, Math.round(runs.length / 120)) }),

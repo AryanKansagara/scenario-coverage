@@ -1,5 +1,6 @@
 import { parseCsv, parseNum } from './csv.ts'
-import type { Metrics, Odd, OddParam, Params, Run, TrajRow } from './types.ts'
+import { trajKey } from './types.ts'
+import type { Campaign, Metrics, Odd, OddParam, Params, Run, TrajRow } from './types.ts'
 
 export type Format = 'param-csv' | 'param-json' | 'xosc' | 'carla-json' | 'trajectory-csv'
 export const FORMATS: Record<Format, string> = {
@@ -539,6 +540,25 @@ export function attachResults(runs: Run[], results: CarlaResult[]): { runs: Run[
 }
 
 // ---------- Trajectories ----------
+
+/** The campaign each run id belongs to. An id several campaigns use goes to `prefer`, else to the latest of them (the last listed). */
+export function trajTargets(campaigns: Campaign[], ids: string[], prefer?: string): { target: Map<string, string>; shared: string[] } {
+  const target = new Map<string, string>(), shared: string[] = []
+  for (const id of ids) {
+    const has = campaigns.filter(c => c.runs.some(r => r.id === id))
+    if (!has.length) continue
+    if (has.length > 1) shared.push(id)
+    target.set(id, (has.find(c => c.id === prefer) ?? has[has.length - 1]).id)
+  }
+  return { target, shared }
+}
+
+/** Storage key for a run's trajectory that no other run uses. */
+export function freeTrajKey(campaigns: Campaign[], campaign: string, run: Run): string {
+  const others = new Set(campaigns.flatMap(c => c.runs.filter(r => r.traj && !(c.id === campaign && r.id === run.id)).map(trajKey)))
+  if (run.traj && !others.has(trajKey(run))) return trajKey(run)
+  return others.has(run.id) ? `${campaign}:${run.id}` : run.id
+}
 
 export interface TrajParsed { byRun: Map<string, TrajRow[]>; issues: Issue[]; degrees: boolean }
 

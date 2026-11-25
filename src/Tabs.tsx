@@ -3,7 +3,7 @@ import { ruleMatches } from './engine/cluster.ts'
 import { binOf, coverage } from './engine/coverage.ts'
 import { toCsv } from './engine/csv.ts'
 import { recommend, recsToCsv, recsToXosc } from './engine/recommend.ts'
-import type { Run } from './engine/types.ts'
+import { trajKey, type Run } from './engine/types.ts'
 import { analyse, trend } from './projectData.ts'
 import type { Tab, TabProps } from './Project.tsx'
 import { getDefaults, sortCampaigns, type TriageStatus } from './store.ts'
@@ -28,6 +28,8 @@ const tabHref = (p: TabProps, t: string, extra = '') => {
   const s = q.toString()
   return `/app/p/${p.project.id}/${t}${s ? '?' + s : ''}`
 }
+
+const runParam = (r: Run) => `run=${encodeURIComponent(trajKey(r))}`
 
 /** Pair with the most failures: the most informative heatmap to open with. */
 function defaultPair(a: TabProps['a']) {
@@ -167,13 +169,13 @@ function CoverageTab(p: TabProps) {
 }
 
 function RunTable({ p, runs }: { p: TabProps; runs: Run[] }) {
-  const idx = useMemo(() => new Map(p.a.runs.map((r, i) => [r.id, i])), [p.a.runs])
+  const idx = useMemo(() => new Map(p.a.runs.map((r, i) => [r, i])), [p.a.runs])
   return (
     <div className="table-wrap"><table>
       <thead><tr><th>Run</th><th>Scenario</th><th>Verdict</th><th className="num">TTC</th><th className="num">Gap</th></tr></thead>
-      <tbody>{runs.map(r => { const v = p.a.verdicts[idx.get(r.id)!]; return (
-        <tr key={r.id}>
-          <th>{r.traj ? <Link href={tabHref(p, 'replay', `run=${r.id}`)}>{r.id}</Link> : r.id}</th>
+      <tbody>{runs.map((r, k) => { const v = p.a.verdicts[idx.get(r)!]; return (
+        <tr key={k}>
+          <th>{r.traj ? <Link href={tabHref(p, 'replay', runParam(r))}>{r.id}</Link> : r.id}</th>
           <td>{r.scenario}</td>
           <td><span className={`badge ${v.status}`} title={v.reasons.join('; ')}>{v.status}</span></td>
           <td className="num">{r.metrics.ttc?.toFixed(2) ?? '—'}</td>
@@ -192,13 +194,14 @@ function FailuresTab(p: TabProps) {
   const [rule, setRule] = useState<number | null>(null)
   const [cluster, setCluster] = useState<number | null>(null)
   const [status, setStatus] = useState<TriageStatus | 'all'>('all')
+  const idx = useMemo(() => new Map(a.runs.map((r, i) => [r, i])), [a.runs])
   const failedRuns = a.runs.map((r, i) => ({ r, v: a.verdicts[i] })).filter(x => x.v.status === 'fail')
   const rows = failedRuns.filter(({ r }) =>
     (rule === null || ruleMatches(a.rules[rule], r)) &&
-    (cluster === null || a.clusterOf.get(r.id) === cluster) &&
+    (cluster === null || a.clusterOf.get(r) === cluster) &&
     (status === 'all' || (project.triage[r.id]?.status ?? 'open') === status))
   const setTriage = (id: string, s: TriageStatus, note?: string) => void update({ triage: { ...project.triage, [id]: { status: s, note: note ?? project.triage[id]?.note, at: Date.now() } } })
-  const csv = () => toCsv([['run_id', 'scenario', ...project.odd.map(d => d.key), 'reasons', 'cluster', 'status', 'note'], ...rows.map(({ r, v }) => [r.id, r.scenario, ...project.odd.map(d => r.params[d.key] ?? ''), v.reasons.join('; '), (a.clusterOf.get(r.id) ?? 0) + 1, project.triage[r.id]?.status ?? 'open', project.triage[r.id]?.note ?? ''])])
+  const csv = () => toCsv([['run_id', 'scenario', ...project.odd.map(d => d.key), 'reasons', 'cluster', 'status', 'note'], ...rows.map(({ r, v }) => [r.id, r.scenario, ...project.odd.map(d => r.params[d.key] ?? ''), v.reasons.join('; '), (a.clusterOf.get(r) ?? 0) + 1, project.triage[r.id]?.status ?? 'open', project.triage[r.id]?.note ?? ''])])
   if (!a.fails) return <div className="panel"><Empty title="No failures in this scope"><p className="muted">Every judged run is within your thresholds. Tighten them on the Data &amp; ODD tab, or look for gaps instead.</p><Link href={tabHref(p, 'next')} className="btn primary">Next scenarios</Link></Empty></div>
   return (
     <>
@@ -238,11 +241,11 @@ function FailuresTab(p: TabProps) {
         <div className="table-wrap"><table className="worklist">
           <thead><tr><th>Run</th><th>Scenario</th><th>Why it failed</th><th>Cluster</th><th>Status</th><th>Note</th></tr></thead>
           <tbody>{rows.slice(0, 200).map(({ r, v }) => (
-            <tr key={r.id}>
-              <th>{r.traj ? <Link href={tabHref(p, 'replay', `run=${r.id}`)} title="Replay">{r.id} &#9654;</Link> : r.id}</th>
+            <tr key={`${idx.get(r)}`}>
+              <th>{r.traj ? <Link href={tabHref(p, 'replay', runParam(r))} title="Replay">{r.id} &#9654;</Link> : r.id}</th>
               <td><span className="small">{r.scenario}</span><div className="tiny muted">{project.odd.slice(0, 4).map(d => String(r.params[d.key] ?? '—').replace(/_/g, ' ')).join(' · ')}</div></td>
               <td className="small">{v.reasons.join('; ')}</td>
-              <td className="num">{(a.clusterOf.get(r.id) ?? 0) + 1}</td>
+              <td className="num">{(a.clusterOf.get(r) ?? 0) + 1}</td>
               <td><select className="table-input" value={project.triage[r.id]?.status ?? 'open'} onChange={e => setTriage(r.id, e.target.value as TriageStatus)} aria-label={`Status of ${r.id}`}>{STATUS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td>
               <td><input className="table-input" defaultValue={project.triage[r.id]?.note ?? ''} placeholder="Ticket, owner…" aria-label={`Note for ${r.id}`} onBlur={e => { if (e.target.value !== (project.triage[r.id]?.note ?? '')) setTriage(r.id, project.triage[r.id]?.status ?? 'open', e.target.value) }} /></td>
             </tr>
@@ -258,16 +261,15 @@ function FailuresTab(p: TabProps) {
 
 function ReplayTab(p: TabProps) {
   const { a, project, traj } = p
-  const idx = useMemo(() => new Map(a.runs.map((r, i) => [r.id, i])), [a.runs])
-  const withTraj = a.runs.filter(r => traj[r.id])
+  const idx = useMemo(() => new Map(a.runs.map((r, i) => [r, i])), [a.runs])
+  const withTraj = a.runs.filter(r => r.traj && traj[trajKey(r)])
   const fromUrl = new URLSearchParams(location.search).get('run')
   const [only, setOnly] = useState<'all' | 'fail'>('all')
-  const list = withTraj.filter(r => only === 'all' || a.verdicts[idx.get(r.id)!].status === 'fail')
-  const sel = fromUrl && traj[fromUrl] ? fromUrl : (list.find(r => a.verdicts[idx.get(r.id)!].status === 'fail') ?? list[0])?.id
-  const pick = (id: string) => go(tabHref(p, 'replay', `run=${id}`), { replace: true, keepScroll: true })
+  const list = withTraj.filter(r => only === 'all' || a.verdicts[idx.get(r)!].status === 'fail')
+  const run = withTraj.find(r => trajKey(r) === fromUrl) ?? list.find(r => a.verdicts[idx.get(r)!].status === 'fail') ?? list[0]
+  const pick = (r: Run) => go(tabHref(p, 'replay', runParam(r)), { replace: true, keepScroll: true })
   if (!withTraj.length) return <div className="panel"><Empty title="No trajectories in this scope"><p className="muted">Import per-run trajectory CSVs (time, actor, x, y, heading, speed) on the Data &amp; ODD tab to compute TTC, PET, gaps and braking from the motion itself, and replay runs here.</p>{project.dataMissing && <p className="warn-text small">This project's trajectories live on another device.</p>}<Link href={`/app/p/${project.id}/data`} className="btn primary">Import trajectories</Link></Empty></div>
-  const run = a.runs[idx.get(sel!)!]
-  const v = a.verdicts[idx.get(sel!)!]
+  const v = run && a.verdicts[idx.get(run)!]
   return (
     <div className="replay-layout">
       <aside className="panel run-list">
@@ -275,14 +277,14 @@ function ReplayTab(p: TabProps) {
           <button type="button" role="radio" aria-checked={only === 'all'} className={only === 'all' ? 'on' : ''} onClick={() => setOnly('all')}>All {withTraj.length}</button>
           <button type="button" role="radio" aria-checked={only === 'fail'} className={only === 'fail' ? 'on' : ''} onClick={() => setOnly('fail')}>Failed</button>
         </div>
-        <ul>{list.map(r => { const s = a.verdicts[idx.get(r.id)!].status; return (
-          <li key={r.id}><button type="button" className={r.id === sel ? 'on' : ''} aria-current={r.id === sel} onClick={() => pick(r.id)}>
+        <ul>{list.map(r => { const s = a.verdicts[idx.get(r)!].status; return (
+          <li key={idx.get(r)}><button type="button" className={r === run ? 'on' : ''} aria-current={r === run} onClick={() => pick(r)}>
             <i className={`dot ${s}`} aria-hidden="true" /><span><b>{r.id}</b><small>{r.scenario.replace(/_/g, ' ')}</small></span>
           </button></li>) })}</ul>
       </aside>
-      {run && <div className="panel">
+      {run && v && <div className="panel">
         <div className="panel-head"><h2>{run.id} <span className={`badge ${v.status}`}>{v.status}</span></h2><span className="muted small">{project.odd.map(d => `${d.label}: ${String(run.params[d.key] ?? '—').replace(/_/g, ' ')}${d.unit && d.kind === 'range' ? ' ' + d.unit : ''}`).join(' · ')}</span></div>
-        <Replay key={run.id} rows={traj[run.id]} th={project.thresholds} laneWidth={project.laneWidth} autoplay />
+        <Replay key={trajKey(run)} rows={traj[trajKey(run)]} th={project.thresholds} laneWidth={project.laneWidth} autoplay />
         <div className="metric-row">
           {([['ttc', 'Min TTC', 's'], ['pet', 'Min PET', 's'], ['minDist', 'Min gap', 'm'], ['maxDecel', 'Max decel', 'm/s²'], ['maxJerk', 'Max jerk', 'm/s³'], ['laneDev', 'Lane offset', 'm']] as const).map(([k, l, u]) => {
             const x = run.metrics[k], th = project.thresholds[k]
