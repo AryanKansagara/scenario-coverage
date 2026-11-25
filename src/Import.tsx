@@ -7,11 +7,11 @@ import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
 import { wholeBins } from './engine/coverage.ts'
 import { createSampleProject } from './projectData.ts'
 import { TH_FIELDS } from './Settings.tsx'
-import { putData, sortCampaigns, uuid, type Project, type TrajStore } from './store.ts'
+import { getProject, putData, sortCampaigns, uuid, type Project, type TrajStore, type Update } from './store.ts'
 import { freeTrajKey, trajTargets } from './engine/parse.ts'
 import { ask, fmtN, go, Link, toast } from './ui.tsx'
 
-interface Props { project: Project; traj: TrajStore; update(p: Partial<Project>): Promise<unknown> }
+interface Props { project: Project; traj: TrajStore; update: Update }
 
 type Staged =
   | { kind: 'table'; format: Format; fileName: string; headers: string[]; rows: string[][]; lines: number[]; map: Mapping }
@@ -122,7 +122,7 @@ function CampaignFields({ label, setLabel, date, setDate }: { label: string; set
 }
 
 async function addCampaign(project: Project, update: Props['update'], c: Campaign, meta: { kind: Format; fileName: string; rows: number; skipped: number }, odd?: Odd) {
-  await update({ odd: odd ?? project.odd, campaigns: sortCampaigns([...project.campaigns, c]), imports: [...project.imports, { id: uuid(), at: Date.now(), campaign: c.id, ...meta }] })
+  await update(now => ({ odd: odd ?? now.odd, campaigns: sortCampaigns([...now.campaigns, c]), imports: [...now.imports, { id: uuid(), at: Date.now(), campaign: c.id, ...meta }] }))
   toast(`Imported ${fmtN(c.runs.length)} runs into “${c.label}”`, { tone: 'ok' })
   go(`/app/p/${project.id}`)
 }
@@ -197,11 +197,15 @@ function CarlaImport({ s, project, update, done }: { s: Extract<Staged, { kind: 
   const open = s.results.filter(r => !r.outcome).length
   const commit = async () => {
     if (camp) {
-      // A result imported again must not reuse the id it got the first time.
-      const ids = new Set(camp.runs.map(r => r.id))
-      const freeId = (name: string, k: number) => { while (ids.has(`${name}-${k}`)) k++; ids.add(`${name}-${k}`); return `${name}-${k}` }
-      const extra: Run[] = res.unmatched.map((r, i) => ({ id: freeId(r.scenario, i + 1), scenario: r.scenario, params: {}, metrics: r.metrics, outcome: r.outcome, reason: r.reason }))
-      await update({ campaigns: project.campaigns.map(c => c.id === camp.id ? { ...c, runs: [...res.runs, ...extra] } : c), imports: [...project.imports, { id: uuid(), kind: 'carla-json', fileName: s.fileName, rows: s.results.length, skipped: 0, at: Date.now(), campaign: camp.id }] })
+      const attach = (c: Campaign): Campaign => {
+        const now = attachResults(c.runs, s.results)
+        // A result imported again must not reuse the id it got the first time.
+        const ids = new Set(c.runs.map(r => r.id))
+        const freeId = (name: string, k: number) => { while (ids.has(`${name}-${k}`)) k++; ids.add(`${name}-${k}`); return `${name}-${k}` }
+        const extra: Run[] = now.unmatched.map((r, i) => ({ id: freeId(r.scenario, i + 1), scenario: r.scenario, params: {}, metrics: r.metrics, outcome: r.outcome, reason: r.reason }))
+        return { ...c, runs: [...now.runs, ...extra] }
+      }
+      await update(now => ({ campaigns: now.campaigns.map(c => c.id === camp.id ? attach(c) : c), imports: [...now.imports, { id: uuid(), kind: 'carla-json', fileName: s.fileName, rows: s.results.length, skipped: 0, at: Date.now(), campaign: camp.id }] }))
       toast(`Attached ${res.matched} results to “${camp.label}”`, { tone: 'ok' })
       go(`/app/p/${project.id}/failures`)
     } else {
@@ -245,18 +249,20 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
     for (const id of ids) {
       try { metrics.set(id, computeMetrics(s.byRun.get(id)!, { laneWidth: project.laneWidth }).metrics) } catch (e) { failed.push(`${id}: ${(e as Error).message}`) }
     }
-    let campaigns = project.campaigns.map(c => ({ ...c, runs: c.runs.map(r => {
-      if (!metrics.has(r.id) || target.get(r.id) !== c.id) return r
-      const key = freeTrajKey(project.campaigns, c.id, r)
-      keys.set(r.id, key)
+    const before = getProject(project.id)?.campaigns ?? project.campaigns
+    for (const c of before) for (const r of c.runs) if (metrics.has(r.id) && target.get(r.id) === c.id) keys.set(r.id, freeTrajKey(before, c.id, r))
+    const measured = (list: Campaign[]) => list.map(c => ({ ...c, runs: c.runs.map(r => {
+      const key = keys.get(r.id)
+      if (key === undefined || target.get(r.id) !== c.id) return r
       const { trajKey: _, ...rest } = r
       return { ...rest, metrics: { ...r.metrics, ...metrics.get(r.id) }, traj: true, ...(key === r.id ? {} : { trajKey: key }) }
     }) }))
     const extra = ids.filter(id => metrics.has(id) && !matched.includes(id))
-    if (extra.length) campaigns = sortCampaigns([...campaigns, { id: uuid(), label: `Trajectories ${today()}`, date: today(), source: 'Trajectories', runs: extra.map(id => ({ id, scenario: id, params: {}, metrics: metrics.get(id)!, traj: true })) }])
+    const added: Campaign[] = []
+    if (extra.length) added.push({ id: uuid(), label: `Trajectories ${today()}`, date: today(), source: 'Trajectories', runs: extra.map(id => ({ id, scenario: id, params: {}, metrics: metrics.get(id)!, traj: true })) })
     for (const id of metrics.keys()) store[keys.get(id) ?? id] = s.byRun.get(id)!
     await putData(project.id, store)
-    await update({ campaigns, dataMissing: false, imports: [...project.imports, { id: uuid(), kind: 'trajectory-csv', fileName: s.fileName, rows: ids.length, skipped: failed.length, at: Date.now() }] })
+    await update(now => ({ campaigns: added.length ? sortCampaigns([...measured(now.campaigns), ...added]) : measured(now.campaigns), dataMissing: false, imports: [...now.imports, { id: uuid(), kind: 'trajectory-csv', fileName: s.fileName, rows: ids.length, skipped: failed.length, at: Date.now() }] }))
     toast(`Measured ${metrics.size} run${metrics.size === 1 ? '' : 's'} from trajectories`, { tone: 'ok' })
     if (failed.length) toast(failed.join('; '), { tone: 'error' })
     setBusy(false)
@@ -293,7 +299,7 @@ function CategoryInput({ value, save, label }: { value: string[]; save(list: str
 
 function OddEditor({ project, update }: { project: Project; update: Props['update'] }) {
   const odd = project.odd
-  const set = (i: number, patch: Partial<OddParam>) => void update({ odd: odd.map((d, k) => k === i ? { ...d, ...patch } : d) })
+  const set = (i: number, patch: Partial<OddParam>) => void update(now => ({ odd: now.odd.map(d => d.key === odd[i].key ? { ...d, ...patch } : d) }))
   const [newKey, setNewKey] = useState('')
   return (
     <div className="panel">
@@ -312,9 +318,8 @@ function OddEditor({ project, update }: { project: Project; update: Props['updat
             <td><input className="table-input narrow" value={d.unit ?? ''} onChange={e => set(i, { unit: e.target.value || undefined })} aria-label={`Unit of ${d.key}`} /></td>
             <td><button type="button" className="btn danger-ghost sm" onClick={async () => {
               if (!(await ask(`Remove ${d.label} from the ODD?`, 'Runs keep the value; it just stops counting towards coverage. You can undo for a few seconds.', 'Remove'))) return
-              const before = odd
-              await update({ odd: odd.filter((_, k) => k !== i) })
-              toast(`Removed ${d.label}`, { undo: () => void update({ odd: before }) })
+              await update(now => ({ odd: now.odd.filter(x => x.key !== d.key) }))
+              toast(`Removed ${d.label}`, { undo: () => void update(now => ({ odd: now.odd.some(x => x.key === d.key) ? now.odd : [...now.odd.slice(0, i), d, ...now.odd.slice(i)] })) })
             }}>Remove</button></td>
           </tr>
         ))}</tbody>
@@ -326,7 +331,7 @@ function OddEditor({ project, update }: { project: Project; update: Props['updat
         const seen = project.campaigns.flatMap(c => c.runs.map(r => r.params[key])).filter(v => v !== undefined)
         const nums = seen.map(Number).filter(Number.isFinite)
         const d: OddParam = seen.length && nums.length === seen.length ? { key, label: pretty(key), kind: 'range', min: Math.min(...nums), max: Math.max(...nums), bins: 5 } : seen.length ? { key, label: pretty(key), kind: 'category', categories: [...new Set(seen.map(String))] } : { key, label: pretty(key), kind: 'range', min: 0, max: 100, bins: 5 }
-        void update({ odd: [...odd, d] }); setNewKey('')
+        void update(now => ({ odd: now.odd.some(x => x.key === key) ? now.odd : [...now.odd, d] })); setNewKey('')
       }}>
         <input value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="e.g. road_friction" aria-label="New parameter key" style={{ maxWidth: 260 }} />
         <button className="btn ghost sm">Add parameter</button>
@@ -340,7 +345,7 @@ function ThresholdEditor({ project, update }: { project: Project; update: Props[
     <div className="panel">
       <div className="panel-head"><h2>Pass / fail thresholds</h2><span className="muted small">A run fails if any measured metric crosses its limit, or the simulator reported a failure.</span></div>
       <div className="inline-fields">
-        {TH_FIELDS.map(([k, label, step]) => <label key={k} className="field"><span>{label}</span><input type="number" min="0" step={step} value={project.thresholds[k]} onChange={e => void update({ thresholds: { ...project.thresholds, [k]: Math.max(0, Number(e.target.value)) } })} /></label>)}
+        {TH_FIELDS.map(([k, label, step]) => <label key={k} className="field"><span>{label}</span><input type="number" min="0" step={step} value={project.thresholds[k]} onChange={e => { const v = Math.max(0, Number(e.target.value)); void update(now => ({ thresholds: { ...now.thresholds, [k]: v } })) }} /></label>)}
         <label className="field"><span>Lane width (m)</span><input type="number" min="2" max="6" step="0.1" value={project.laneWidth} onChange={e => void update({ laneWidth: Number(e.target.value) })} /></label>
       </div>
     </div>

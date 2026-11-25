@@ -245,7 +245,7 @@ test('#9 trajectory: heading_rad is read as radians whatever its size', async ({
   await expect(page.getByText('headings in radians')).toBeVisible(soon)
 })
 
-bug(17, 'a note and a status set right after each other are both kept', async ({ page }) => {
+test('#17 a note and a status set right after each other are both kept', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,min_ttc\na,rain,day,1\nb,dry,night,4\n')
   await section(page, 'Failures')
@@ -256,4 +256,48 @@ bug(17, 'a note and a status set right after each other are both kept', async ({
   await page.reload()
   await expect(page.getByLabel('Status of a')).toHaveValue('triaged')
   await expect(page.getByLabel('Note for a')).toHaveValue('JIRA-1', soon)
+})
+
+test('#17 edits of different settings made while a save is still running are all kept', async ({ page }) => {
+  // A slow disk: every project write starts its work 400 ms late, in order.
+  await page.addInitScript(() => {
+    const put = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...a: Parameters<typeof put>) {
+      const start = Date.now()
+      const req = put.apply(this, a)
+      // Keeping the transaction busy delays the success of the writes queued behind it.
+      const spin = () => { if (Date.now() - start < 400) this.count().onsuccess = spin }
+      if (this.name === 'projects') spin()
+      return req
+    }
+  })
+  await newProject(page)
+  await importTable(page, 'r.csv', 'run_id,weather,gap,min_ttc\na,rain,5,1\nb,dry,30,4\n')
+  await section(page, 'Data & ODD')
+  const set = (label: string, v: string) => page.getByLabel(label, { exact: true }).evaluate((el: HTMLInputElement, v) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }, v)
+  await Promise.all([set('Label for weather', 'Sky'), set('Maximum gap', '40'), set('Label for gap', 'Distance'), set('Lane width (m)', '3.5')])
+  await expect(page.getByLabel('Label for weather')).toHaveValue('Sky', soon)
+  await page.waitForTimeout(3000)
+  await page.reload()
+  await expect(page.getByLabel('Label for weather')).toHaveValue('Sky', soon)
+  await expect(page.getByLabel('Label for gap')).toHaveValue('Distance')
+  await expect(page.getByLabel('Maximum gap')).toHaveValue('40')
+  await expect(page.getByLabel('Lane width (m)')).toHaveValue('3.5')
+})
+
+test('#17 undoing a removed parameter keeps edits made since', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'r.csv', 'run_id,weather,light,min_ttc\na,rain,day,1\nb,dry,night,4\n')
+  await section(page, 'Data & ODD')
+  await odd(page, 'weather').getByRole('button', { name: 'Remove' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove' }).click()
+  await expect(odd(page, 'weather')).toHaveCount(0)
+  await page.getByLabel('Label for light').fill('Lighting')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.locator('.odd-table tbody tr')).toHaveCount(2)
+  await expect(page.locator('.odd-table tbody tr').first()).toContainText('weather')
+  await expect(page.getByLabel('Label for light')).toHaveValue('Lighting', soon)
 })

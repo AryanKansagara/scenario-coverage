@@ -204,7 +204,7 @@ function FailuresTab(p: TabProps) {
     (rule === null || ruleMatches(a.rules[rule], r)) &&
     (cluster === null || a.clusterOf.get(r) === cluster) &&
     (status === 'all' || (project.triage[r.id]?.status ?? 'open') === status))
-  const setTriage = (id: string, s: TriageStatus, note?: string) => void update({ triage: { ...project.triage, [id]: { status: s, note: note ?? project.triage[id]?.note, at: Date.now() } } })
+  const setTriage = (id: string, s?: TriageStatus, note?: string) => void update(now => ({ triage: { ...now.triage, [id]: { status: s ?? now.triage[id]?.status ?? 'open', note: note ?? now.triage[id]?.note, at: Date.now() } } }))
   const csv = () => toCsv([['run_id', 'scenario', ...project.odd.map(d => d.key), 'reasons', 'cluster', 'status', 'note'], ...rows.map(({ r, v }) => [r.id, r.scenario, ...project.odd.map(d => r.params[d.key] ?? ''), v.reasons.join('; '), (a.clusterOf.get(r) ?? 0) + 1, project.triage[r.id]?.status ?? 'open', project.triage[r.id]?.note ?? ''])])
   if (a.untested === a.runs.length) return <div className="panel"><Empty title="No results in this scope"><p className="muted">None of these runs has a verdict yet. Import results or trajectories on the Data &amp; ODD tab.</p><Link href={`/app/p/${project.id}/data`} className="btn primary">Import results</Link></Empty></div>
   if (!a.fails) return <div className="panel"><Empty title="No failures in this scope"><p className="muted">Every judged run is within your thresholds. Tighten them on the Data &amp; ODD tab, or look for gaps instead.</p><Link href={tabHref(p, 'next')} className="btn primary">Next scenarios</Link></Empty></div>
@@ -252,7 +252,7 @@ function FailuresTab(p: TabProps) {
               <td className="small">{v.reasons.join('; ')}</td>
               <td className="num">{(a.clusterOf.get(r) ?? 0) + 1}</td>
               <td><select className="table-input" value={project.triage[r.id]?.status ?? 'open'} onChange={e => setTriage(r.id, e.target.value as TriageStatus)} aria-label={`Status of ${r.id}`}>{STATUS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td>
-              <td><input className="table-input" defaultValue={project.triage[r.id]?.note ?? ''} placeholder="Ticket, owner…" aria-label={`Note for ${r.id}`} onBlur={e => { if (e.target.value !== (project.triage[r.id]?.note ?? '')) setTriage(r.id, project.triage[r.id]?.status ?? 'open', e.target.value) }} /></td>
+              <td><input className="table-input" defaultValue={project.triage[r.id]?.note ?? ''} placeholder="Ticket, owner…" aria-label={`Note for ${r.id}`} onBlur={e => { if (e.target.value !== (project.triage[r.id]?.note ?? '')) setTriage(r.id, undefined, e.target.value) }} /></td>
             </tr>
           ))}</tbody>
         </table></div>
@@ -373,10 +373,9 @@ function HistoryTab(p: TabProps) {
   const remove = async (id: string) => {
     const c = list.find(x => x.id === id)!
     if (!(await ask(`Delete campaign “${c.label}”?`, `Removes ${c.runs.length} runs from this project. You can undo for a few seconds.`, 'Delete campaign'))) return
-    const before = project.campaigns
-    await update({ campaigns: before.filter(x => x.id !== id) })
+    await update(now => ({ campaigns: now.campaigns.filter(x => x.id !== id) }))
     void deleteCampaignCloud(id)
-    toast(`Deleted ${c.label}`, { undo: () => void update({ campaigns: before }) })
+    toast(`Deleted ${c.label}`, { undo: () => void update(now => ({ campaigns: now.campaigns.some(x => x.id === id) ? now.campaigns : sortCampaigns([...now.campaigns, c]) })) })
   }
 
   return (
