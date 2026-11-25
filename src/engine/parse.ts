@@ -34,6 +34,31 @@ export function detect(fileName: string, text: string): Format {
 
 // ---------- Parameter tables ----------
 
+const unclosed = (line: number) => new Error(`The quote opened on line ${line} is never closed. The file is damaged or cut off.`)
+
+/** Why a file cannot be a text table, or null. */
+export function notText(text: string): string | null {
+  if (/^PK\x03\x04/.test(text)) return 'This is an Excel workbook or ZIP archive. Save the sheet as CSV first.'
+  if (/^\uFFFD\uFFFD/.test(text) || /[\x00-\x08\x0e-\x1f]/.test(text)) return 'This is not a UTF-8 text file. Save it as CSV (UTF-8) first.'
+  if (/^[\s\uFEFF]*<[!?a-z]/i.test(text)) return 'This is an HTML or XML document, not a table.'
+  return null
+}
+
+/** Reads a CSV parameter table; throws when the file is not one or is damaged beyond a single row. */
+export function csvTable(text: string): { headers: string[]; rows: string[][]; lines: number[] } {
+  const why = notText(text)
+  if (why) throw new Error(why)
+  const { rows, lines, openQuote } = parseCsv(text)
+  if (openQuote) throw unclosed(openQuote)
+  return { headers: rows[0] ?? [], rows: rows.slice(1), lines: lines.slice(1) }
+}
+
+/** Cells cannot be told apart in a row with the wrong number of them. Blank cells past the last named column do not count. */
+const cellsFit = (headers: string[], row: string[]) => {
+  const n = headers.findLastIndex(h => h.trim()) + 1
+  return row.length >= n && row.slice(n).every((c, i) => !c.trim() || n + i < headers.length)
+}
+
 export type Role = 'id' | 'scenario' | 'outcome' | 'reason' | 'param' | 'ignore' | keyof Metrics
 export const ROLE_LABEL: Record<Role, string> = { id: 'Run id', scenario: 'Scenario name', outcome: 'Pass / fail', reason: 'Failure reason', param: 'ODD parameter', ignore: 'Ignore', ttc: 'Min TTC (s)', pet: 'Min PET (s)', minDist: 'Min distance (m)', maxDecel: 'Max decel (m/s²)', maxJerk: 'Max jerk (m/s³)', laneDev: 'Lane offset (m)', collision: 'Collision' }
 
@@ -86,9 +111,10 @@ const niceCeil = (x: number) => { const m = 10 ** Math.floor(Math.log10(Math.abs
 /** Guesses an ODD from the parameter columns: mostly-numeric columns become ranges, the rest categories. */
 export function inferOdd(headers: string[], rows: string[][], map: Mapping): Odd {
   const odd: Odd = []
+  const fit = rows.filter(r => cellsFit(headers, r))
   headers.forEach((h, c) => {
-    if (map[c] !== 'param') return
-    const vals = rows.map(r => (r[c] ?? '').trim()).filter(v => v !== '')
+    if (map[c] !== 'param' || odd.some(d => d.key === norm(h))) return
+    const vals = fit.map(r => (r[c] ?? '').trim()).filter(v => v !== '')
     if (!vals.length) return
     const nums = vals.map(parseNum).filter(Number.isFinite)
     const key = norm(h)
@@ -118,9 +144,17 @@ export function validateTable(headers: string[], rows: string[][], lines: number
   const byKey = new Map(odd.map(d => [d.key, d]))
   let skipped = 0
   if (!map.includes('param')) issues.push({ line: 1, level: 'error', message: 'No column is mapped to an ODD parameter, so there is nothing to measure coverage on.' })
+  const taken = new Map<string, string>()
+  headers.forEach((h, c) => {
+    if (map[c] !== 'param') return
+    const first = taken.get(norm(h))
+    if (first === undefined) taken.set(norm(h), h)
+    else issues.push({ line: 1, level: 'error', message: `Columns "${first}" and "${h}" are the same parameter (${norm(h)}). Set one of them to Ignore.` })
+  })
   rows.forEach((row, ri) => {
     const line = lines[ri]
     if (row.every(c => !c.trim())) return
+    if (!cellsFit(headers, row)) { skipped++; issues.push({ line, level: 'error', message: `Row skipped: it has ${row.length} cells, the header has ${headers.length}. A value with the column separator in it must be quoted.` }); return }
     const params: Params = {}, metrics: Metrics = {}
     let id = '', scenario = '', outcome: Run['outcome'], reason: string | undefined, bad = false
     headers.forEach((h, c) => {
@@ -521,6 +555,7 @@ function esminiWide(rows: string[][], lines: number[], fallbackRun: string, issu
  */
 export function parseTrajectories(text: string, fallbackRun: string): TrajParsed {
   const all = parseCsv(text)
+  if (all.openQuote) throw unclosed(all.openQuote)
   const wide = all.rows.findIndex(r => r.some(c => /#1 World_Position_X/.test(c)))
   // Skip banner lines above the header (esmini dat2csv writes "Version: ..., OpenDRIVE: ..." first).
   const start = wide >= 0 ? wide : Math.max(0, all.rows.slice(0, 5).findIndex(isTrajHeader))

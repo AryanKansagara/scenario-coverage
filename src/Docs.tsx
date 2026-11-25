@@ -77,7 +77,7 @@ export default function Docs() {
         <li><b>Metrics</b> recognised by name: <code>min_ttc</code>, <code>pet</code>, <code>min_distance</code>, <code>max_decel</code>, <code>max_jerk</code>, <code>lane_offset</code>, <code>collision</code>. Collision takes yes/no words or a count; deceleration, jerk and lane offset are judged by size, so a minus sign does not matter.</li>
         <li>JSON: an array of runs or <code>{'{ "runs": [...] }'}</code>; nested <code>params</code> and <code>metrics</code> objects are flattened.</li>
         <li>Numeric columns become ranges (5 bins), text columns categories. Edit both on the Data &amp; ODD tab.</li>
-        <li>Problems are reported with the source line: non-numeric values in a range column are errors (row skipped); values outside the ODD, unknown categories and duplicate ids are warnings.</li>
+        <li>Problems are reported with the source line: non-numeric values in a range column are errors (row skipped), as are rows with more or fewer cells than the header; values outside the ODD, unknown categories and duplicate ids are warnings.</li>
       </ul>
       <p>If runs live in a database, export them with a query and save as CSV:</p>
       <Code code={SQL} label="SQL" />

@@ -98,21 +98,21 @@ bug(6, 'a campaign that was not run has no failure rate', async ({ page }) => {
   await expect(page.getByRole('row', { name: /^Plan / })).toContainText('100.0%—', { timeout: 8000 })
 })
 
-bug(7, 'table: an unclosed quote is an error, not one big cell', async ({ page }) => {
+test('#7 table: an unclosed quote is an error, not one big cell', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'r.csv', text: 'run_id,weather,light\na,"rain,day\nb,dry,night\nc,dry,day\n' })
   await expect(page.getByRole('alert')).toContainText('line 2', soon)
 })
 
-bug(7, 'table: rows with the wrong number of cells are skipped', async ({ page }) => {
+test('#7 table: rows with the wrong number of cells are skipped', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'r.csv', text: 'run_id,weather,gap,result\na,rain,3,5,fail\nb,rain,4\nc,dry,5,fail\nd,dry,6,pass\n' })
   await expect(issues(page)).toContainText('line 2', soon)
   await expect(page.getByRole('button', { name: 'Import 2 runs (skip 2)' })).toBeEnabled(soon)
 })
 
-for (const [what, name, data] of [['an Excel workbook', 'r.csv', Buffer.from([0x50, 0x4b, 3, 4, 0x14, 0, 8, 0, 10, 0x61, 0x2c, 0x62, 10, 1, 2])], ['a UTF-16 file', 'r.txt', Buffer.from('﻿run_id\tweather\tlight\r\na\train\tday\r\nb\tdry\tnight\r\n', 'utf16le')], ['an HTML page', 'r.csv', Buffer.from('<!doctype html>\n<html>\n<p>Sign in, please</p>\n</html>\n')]] as const)
-  bug(7, `table: ${what} is refused`, async ({ page }) => {
+for (const [what, name, data] of [['an Excel workbook', 'r.csv', Buffer.from([0x50, 0x4b, 3, 4, 0x14, 0, 8, 0, 10, 0x61, 0x2c, 0x62, 10, 1, 2])], ['a UTF-16 file without a BOM', 'r.txt', Buffer.from('run_id\tweather\tlight\r\na\train\tday\r\nb\tdry\tnight\r\n', 'utf16le')], ['an HTML page', 'r.csv', Buffer.from('<!doctype html>\n<html>\n<p>Sign in, please</p>\n</html>\n')]] as const)
+  test(`#7 table: ${what} is refused`, async ({ page }) => {
     await newProject(page)
     await drop(page, { name, text: data })
     await expect(page.getByRole('alert')).toContainText(`Could not read ${name}`, soon)
