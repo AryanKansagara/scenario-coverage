@@ -5,7 +5,7 @@ import { clusterFailures, extractRules, kmeans, normalise, ruleMatches } from '.
 import { binOf, coverage, findGaps, judge, judgeAll } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
 import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, pickFiles, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
-import { formatList, parseCsv, parseList } from './csv.ts'
+import { formatList, parseCsv, parseList, toCsv } from './csv.ts'
 import { freeTrajKey, trajTargets } from './parse.ts'
 import { recommend, recsToCsv, recsToXosc } from './recommend.ts'
 import { DEFAULT_THRESHOLDS, simulate } from './sample.ts'
@@ -548,4 +548,17 @@ test('every file of a drop is imported or named as left out', () => {
   assert.deepEqual(pick(traj('t1.csv'), table('b.csv'), traj('t2.csv')), ['trajectory-csv', [0, 2], ['b.csv']])
   assert.deepEqual(pick(xosc, { ...xosc, name: 't.xosc' }), ['xosc', [0, 1], []])
   assert.deepEqual(pick(carla, xosc, { name: 'empty.json', text: '' }), ['carla-json', [0], ['s.xosc', 'empty.json']])
+})
+
+test('CSV export: cells a spreadsheet would run are neutralised, numbers are not', () => {
+  const cell = (v: string | number) => parseCsv(toCsv([['h', 'x'], [v, 'x']])).rows[1][0]
+  for (const s of ['=1+1', '=HYPERLINK("http://x.test","go")', '+cmd', '-2+3', '@SUM(A1)', '\t=1', '\r=1', '-', '--1', '+1 2', '-5 to -1', '-1e', '-Infinity']) assert.equal(cell(s), `'${s}`)
+  for (const s of ['-5', '+5', '-0.5', '-.5', '-5.', '-1e-7', '+3E8', '1=1', 'a-b', '', "'=1", ' x', '−5']) assert.equal(cell(s), s)
+  assert.equal(cell(-5.25), '-5.25')
+  assert.equal(toCsv([['a\rb', 'a\nb', 'a"b', 'a,b']]), '"a\rb","a\nb","a""b","a,b"\n')
+  // Header cells and exported parameters go through the same path.
+  const odd: Odd = [{ key: '=k', label: 'K', kind: 'category', categories: ['=x'] }, { key: 'x', label: 'X', kind: 'range', min: -10, max: -5, bins: 2 }]
+  const rows = parseCsv(recsToCsv(odd, recommend(odd, [], [], { n: 2 }))).rows
+  assert.deepEqual([rows[0][1], rows[1][1]], ["'=k", "'=x"])
+  assert.ok(rows.slice(1).every(r => Number(r[2]) <= -5))
 })
