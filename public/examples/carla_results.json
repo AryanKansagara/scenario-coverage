@@ -1,0 +1,302 @@
+[
+    {
+        "scenario": "EX-0051",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0052",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0053",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0054",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0055",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0056",
+        "success": false,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 1,
+                "success": false
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0057",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0058",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0059",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    },
+    {
+        "scenario": "EX-0060",
+        "success": true,
+        "criteria": [
+            {
+                "name": "CollisionTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": false,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "KeepLaneTest",
+                "actor": "tesla.cybertruck-221",
+                "optional": true,
+                "expected": 0,
+                "actual": 0,
+                "success": true
+            },
+            {
+                "name": "Duration",
+                "actor": "all",
+                "optional": false,
+                "expected": 60,
+                "actual": 12,
+                "success": true
+            }
+        ]
+    }
+]
