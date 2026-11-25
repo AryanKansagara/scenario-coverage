@@ -129,7 +129,7 @@ function TableImport({ s, setS, project, update, done }: { s: Extract<Staged, { 
   const v = useMemo(() => validateTable(s.headers, s.rows, s.lines, s.map, odd), [s, odd])
   const [label, setLabel] = useState(s.fileName.replace(/\.[^.]+$/, ''))
   const [date, setDate] = useState(today())
-  const errors = v.issues.filter(i => i.level === 'error' && i.line === 1).length
+  const errors = v.issues.filter(i => i.blocks).length
   return <>
     <p><b>{s.fileName}</b> · detected <b>{FORMATS[s.format]}</b> · {fmtN(s.rows.length)} rows</p>
     <h3>Column mapping</h3>

@@ -476,3 +476,32 @@ test('trajectory CSV: a unit in the heading header wins over the size of the val
   assert.equal(t('heading', 7).degrees, true)
   assert.equal(t('heading', 3).degrees, false)
 })
+
+test('JSON: records with a verdict and parameters are a table, bare verdicts and criteria are CARLA results', () => {
+  const d = (x: unknown) => detect('r.json', JSON.stringify(x))
+  assert.equal(d([{ id: 'a', weather: 'rain', light: 'day', success: true }]), 'param-json')
+  assert.equal(d({ runs: [{ id: 'a', params: { weather: 'rain' }, success: true }] }), 'param-json')
+  assert.equal(d([{ id: 'a', weather: 'rain' }, { id: 'b', weather: 'dry', success: false }]), 'param-json')
+  assert.equal(d([{ id: 'a', criteria: 'strict', weather: 'rain', success: true }]), 'param-json')
+  assert.equal(d([...Array(2000)].map((_, i) => ({ id: `r${i}`, weather: 'rain', success: true }))), 'param-json')
+  assert.equal(d({ scenario: 'a', success: true }), 'carla-json')
+  assert.equal(d([{ scenario: 'a', success: true, duration_game: 12.1, timeout: 60 }]), 'carla-json')
+  assert.equal(d([{ scenario: 'a', success: true, weather: 'rain', criteria: [] }]), 'carla-json')
+  assert.equal(d([{ scenario: 'a', name: 'b', success: true, status: 'SUCCESS' }]), 'carla-json')
+  assert.equal(d([{ scenario: 'a' }, { scenario: 'b', criteria: [{ name: 'CollisionTest', actual: 1 }] }]), 'carla-json')
+  assert.equal(d({ _checkpoint: { records: [] } }), 'carla-json')
+  for (const x of [null, [], [null], [1], {}, { runs: 3 }, 'x']) assert.doesNotThrow(() => d(x))
+  assert.equal(detect('r.json', '[{"scenario":"a","success":true,"crit'), 'carla-json')
+  // Both readings of a record the detector sends to the table keep its verdict.
+  const t = jsonTable(JSON.stringify([{ id: 'a', weather: 'rain', light: 'day', success: true }, { id: 'b', weather: 'dry', light: 'day', success: false }]))
+  const map = autoMap(t.headers)
+  assert.deepEqual(validateTable(t.headers, t.rows, t.lines, map, inferOdd(t.headers, t.rows, map)).runs.map(r => [r.id, r.outcome, r.params.weather]), [['a', 'pass', 'rain'], ['b', 'fail', 'dry']])
+})
+
+test('a bad first row or record is skipped; only mapping errors stop the import', () => {
+  const t = jsonTable(JSON.stringify([{ id: 'x', gap: 'fast' }, ...[...Array(12)].map((_, i) => ({ id: `r${i}`, gap: i }))]))
+  const map = autoMap(t.headers), v = validateTable(t.headers, t.rows, t.lines, map, inferOdd(t.headers, t.rows, map))
+  assert.deepEqual([v.runs.length, v.skipped, v.issues.map(i => [i.line, i.level, i.blocks])], [12, 1, [[1, 'error', undefined]]])
+  assert.deepEqual(validateTable(['id', 'Gap', 'gap'], [['a', '1', '2']], [2], ['id', 'param', 'param'], []).issues.map(i => i.blocks), [true])
+  assert.deepEqual(validateTable(['id'], [['a']], [2], ['id'], []).issues.map(i => i.blocks), [true])
+})
