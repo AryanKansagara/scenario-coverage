@@ -133,6 +133,22 @@ test('computeMetrics: braking ego reports max deceleration and jerk', () => {
   assert.ok((m.maxJerk ?? 1) < 1e-6) // constant deceleration
 })
 
+test('computeMetrics: lane offset is measured from a lane along the starting heading', () => {
+  const drive = (deg: number, side = 0, drift = 0): TrajRow[] => [0, 1, 2].map(t => {
+    const h = (deg * Math.PI) / 180, l = t ? side : 0
+    return { t, id: 'ego', x: 20 * t * Math.cos(h) - l * Math.sin(h), y: 20 * t * Math.sin(h) + l * Math.cos(h), h: h + drift, v: 20 }
+  })
+  for (const deg of [0, 30, 45, 90, 135, 180, -90, 270, 360, 450]) {
+    assert.equal(computeMetrics(drive(deg)).metrics.laneDev, 0, `${deg}`)
+    assert.equal(computeMetrics(drive(deg, 1.2)).metrics.laneDev, 1.2, `${deg} offset`)
+  }
+  assert.equal(computeMetrics(drive(90)).laneDeparture, false)
+  // A run along +x keeps its horizontal lane when the ego starts with a little steering.
+  for (const drift of [0.03, -0.03]) assert.equal(computeMetrics(drive(0, 0.5, drift)).metrics.laneDev, 0.5)
+  // A given centreline still wins.
+  assert.equal(computeMetrics(drive(90), { centreline: [[-100, 0], [100, 0]] }).metrics.laneDev, 40)
+})
+
 test('computeMetrics: a rear-end collision is detected', () => {
   const m = computeMetrics([...straight('ego', 0, 0, 30), ...straight('lead', 20, 0, 10)]).metrics
   assert.equal(m.collision, true)

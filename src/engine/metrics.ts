@@ -97,14 +97,24 @@ export function distToPolyline(p: Pt, line: Pt[]): number {
 export interface Series { t: number[]; ttc: number[]; dist: number[]; accel: number[] }
 export interface MetricResult { metrics: Metrics; series: Series; laneDeparture: boolean }
 
+/** Starting headings closer to the x axis than this are steering within a lane along it, not the direction of the road. */
+const AXIS_SLACK = (2 * Math.PI) / 180
+
+function startLane(ego: Track): Pt[] {
+  const x = ego.x[0], y = ego.y[0]
+  let c = Math.cos(ego.h[0]), s = Math.sin(ego.h[0])
+  if (Math.abs(s) < Math.sin(AXIS_SLACK)) { c = 1; s = 0 }
+  return [[x - 1e4 * c, y - 1e4 * s], [x + 1e4 * c, y + 1e4 * s]]
+}
+
 /**
  * All per-run safety metrics from a trajectory, evaluated at the ego's sample times.
- * centreline defaults to the ego's own lane at its starting y (straight road along +x).
+ * centreline defaults to the ego's own lane: a straight line through its starting position along its starting heading.
  */
 export function computeMetrics(rows: TrajRow[], opts: { centreline?: Pt[]; laneWidth?: number; horizon?: number } = {}): MetricResult {
   const { ego, others } = toTracks(rows)
   const laneWidth = opts.laneWidth ?? 3.7
-  const line: Pt[] = opts.centreline ?? [[ego.x[0] - 1e4, ego.y[0]], [ego.x[0] + 1e4, ego.y[0]]]
+  const line = opts.centreline ?? startLane(ego)
   const series: Series = { t: [], ttc: [], dist: [], accel: [] }
   let ttc = Infinity, minDist = Infinity, collision = false, laneDev = 0
 
