@@ -291,6 +291,20 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
 
 // ---------- ODD editor ----------
 
+/** A number field that saves complete numbers only; what is typed on the way there ("-", nothing) stays in the field until it is left. */
+function BoundInput({ value, save, label }: { value?: number; save(n: number): void; label: string }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  return <input className="table-input" type="number" value={draft ?? value ?? ''} onChange={e => {
+    const s = e.target.value
+    setDraft(s)
+    if (s !== '' && Number.isFinite(Number(s))) save(Number(s))
+  }} onBlur={e => {
+    setDraft(null)
+    // The field reports "" for text that is not a number, so React cannot tell that it has to be replaced.
+    if (e.target.validity.badInput) e.target.value = String(value ?? '')
+  }} aria-label={label} />
+}
+
 function CategoryInput({ value, save, label }: { value: string[]; save(list: string[]): void; label: string }) {
   // A text field drops line breaks, so a category holding one must not look like an edit.
   const text = formatList(value).replace(/[\r\n]/g, '')
@@ -312,7 +326,7 @@ function OddEditor({ project, update }: { project: Project; update: Props['updat
             <td className="mono small">{d.key}</td>
             <td><select className="table-input" value={d.kind} onChange={e => set(i, e.target.value === 'range' ? { kind: 'range', min: d.min ?? 0, max: d.max ?? 100, bins: d.bins ?? 5 } : { kind: 'category', categories: d.categories ?? [] })} aria-label={`Type of ${d.key}`}><option value="range">Range</option><option value="category">Category</option></select></td>
             <td>{d.kind === 'range'
-              ? <div className="row gap-sm"><input className="table-input" type="number" value={d.min} onChange={e => set(i, { min: Number(e.target.value) })} aria-label={`Minimum ${d.key}`} /><span>to</span><input className="table-input" type="number" value={d.max} onChange={e => set(i, { max: Number(e.target.value) })} aria-label={`Maximum ${d.key}`} /></div>
+              ? <div className="row gap-sm"><BoundInput value={d.min} save={min => set(i, { min })} label={`Minimum ${d.key}`} /><span>to</span><BoundInput value={d.max} save={max => set(i, { max })} label={`Maximum ${d.key}`} /></div>
               : <CategoryInput value={d.categories ?? []} save={categories => set(i, { categories })} label={`Categories of ${d.key}`} />}</td>
             <td>{d.kind === 'range' ? <input className="table-input narrow" type="number" min="1" max="20" value={d.bins ?? 5} onChange={e => set(i, { bins: wholeBins(Number(e.target.value)) })} aria-label={`Bins for ${d.key}`} /> : <span className="muted small">{d.categories?.length ?? 0}</span>}</td>
             <td><input className="table-input narrow" value={d.unit ?? ''} onChange={e => set(i, { unit: e.target.value || undefined })} aria-label={`Unit of ${d.key}`} /></td>

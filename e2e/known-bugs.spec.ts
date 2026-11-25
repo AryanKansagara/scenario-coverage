@@ -1,10 +1,7 @@
 import { test, expect, newProject, importTable, drop, kpi, section, odd, issues, downloaded } from './fixtures.ts'
 
-// Each test states the right behaviour and is expected to fail until its issue is fixed.
-// The fix removes the fail marker. Waits are short because most of these never come true today.
+// Each test states the right behaviour for a fixed bug; the number is its GitHub issue.
 const soon = { timeout: 8_000 }
-/** The number is the GitHub issue. SHOW_BUGS=1 runs the tests as normal ones, to see why each fails. */
-const bug = (issue: number, name: string, body: Parameters<typeof test>[2]) => (process.env.SHOW_BUGS ? test : test.fail)(`#${issue} ${name}`, body)
 
 test('#2 CARLA: a record without a verdict is not a pass', async ({ page }) => {
   await newProject(page)
@@ -184,7 +181,7 @@ test('#13 exports do not carry spreadsheet formulas', async ({ page }) => {
   expect((await downloaded(page, 'Download CSV')).text).toContain(`a,"'=HYPERLINK(""http://x.test"",""go"")",rain,day,`)
 })
 
-bug(14, 'a negative ODD bound can be typed', async ({ page }) => {
+test('#14 a negative ODD bound can be typed', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,gap\na,rain,0\nb,dry,30\n')
   await section(page, 'Data & ODD')
@@ -192,6 +189,29 @@ bug(14, 'a negative ODD bound can be typed', async ({ page }) => {
   await min.press('Control+a')
   await min.pressSequentially('-30', { delay: 150 })
   await expect(min).toHaveValue('-30', soon)
+  await page.reload()
+  await expect(min).toHaveValue('-30')
+})
+
+test('#14 an unfinished bound is not saved', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'r.csv', 'run_id,weather,gap\na,rain,5\nb,dry,30\n')
+  await section(page, 'Data & ODD')
+  const min = page.getByLabel('Minimum gap'), max = page.getByLabel('Maximum gap')
+  for (const typed of ['', '-', '1e']) {
+    await min.press('Control+a')
+    await min.press('Delete')
+    await min.pressSequentially(typed, { delay: 50 })
+    await max.focus()
+    // "1e" had already saved the 1 on the way.
+    await expect(min).toHaveValue(typed === '1e' ? '1' : '5', soon)
+    expect(await min.evaluate((el: HTMLInputElement) => el.validity.badInput)).toBe(false)
+  }
+  await max.fill('-2.5e1')
+  await min.fill('-30.25')
+  await page.reload()
+  await expect(min).toHaveValue('-30.25')
+  await expect(max).toHaveValue('-25')
 })
 
 test('#15 looking at a category with a comma does not split it', async ({ page }) => {
