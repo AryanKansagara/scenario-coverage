@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { csvTable } from './parse.ts'
 import { clusterFailures, extractRules, kmeans, normalise, ruleMatches } from './cluster.ts'
 import { binOf, coverage, findGaps, judge } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
@@ -342,6 +343,32 @@ test('signed braking, jerk and lane offset are judged by size; TTC and gap keep 
   const v = validateTable(['w', 'd', 'j', 'l', 't', 'g'], [['a', '-7.2', '-13', '-1.4', '-1', '-0.2'], ['a', '-6', '1', '1', '2', '2']], [2, 3], ['param', 'maxDecel', 'maxJerk', 'laneDev', 'ttc', 'minDist'], [{ key: 'w', label: 'w', kind: 'category', categories: ['a'] }])
   assert.deepEqual(v.runs[0].metrics, { maxDecel: 7.2, maxJerk: 13, laneDev: 1.4, ttc: -1, minDist: -0.2 })
   assert.equal(v.issues.length, 3)
+})
+
+test('damaged and foreign files are refused', () => {
+  assert.throws(() => csvTable('a,b\n1,"x\n2,y\n'), /line 2/)
+  assert.throws(() => csvTable('a,b\n1,"x\ny"\n2,"z'), /line 4/)
+  for (const bad of ['PK\x03\x04a,b\n1,2\n', '\uFFFD\uFFFDa\0,\0b\0\n\0', 'a,b\n1,\x02\n', '\uFEFF<html>\na,b\n', '<?xml version="1.0"?>\n<a/>\n']) assert.throws(() => csvTable(bad))
+  // A quoted line break, a Latin-1 degree sign (decoded as U+FFFD) and an inch mark are all fine.
+  assert.deepEqual(csvTable('\uFEFFa,b\r\n"1\n2",20\uFFFDC\r\n3,5"\r\n').rows, [['1\n2', '20\uFFFDC'], ['3', '5"']])
+})
+
+test('rows with the wrong number of cells are skipped; trailing blanks are not extra cells', () => {
+  const run = (text: string) => { const t = csvTable(text), map = autoMap(t.headers), odd = inferOdd(t.headers, t.rows, map); return { odd, v: validateTable(t.headers, t.rows, t.lines, map, odd) } }
+  const { odd, v } = run('run_id,weather,gap,result\na,rain,3,5,fail\nb,rain,900\nc,dry,5,fail\nd,dry,6,pass,,\ne,dry,7,\n')
+  assert.deepEqual(v.runs.map(r => r.id), ['c', 'd', 'e'])
+  assert.deepEqual([v.skipped, v.issues.map(i => [i.line, i.level])], [2, [[2, 'error'], [3, 'error']]])
+  assert.equal(odd.find(d => d.key === 'gap')!.max, 7)
+  assert.equal(run('run_id,weather,,\na,rain\nb,dry,,\n').v.runs.length, 2)
+  assert.equal(run('run_id,weather,\na,rain,stray,more\nb,dry\n').v.runs.length, 1)
+})
+
+test('two columns with one key block the import until one is ignored', () => {
+  const h = ['run_id', 'Ego Speed', 'ego_speed'], rows = [['a', '1', '5']]
+  const odd = inferOdd(h, rows, autoMap(h))
+  assert.deepEqual(odd.map(d => d.key), ['ego_speed'])
+  assert.deepEqual(validateTable(h, rows, [2], autoMap(h), odd).issues.filter(i => i.level === 'error').map(i => [i.line, i.level]), [[1, 'error']])
+  assert.equal(validateTable(h, rows, [2], ['id', 'param', 'ignore'], odd).issues.length, 0)
 })
 
 test('JSON parameter tables flatten nested params and metrics', () => {

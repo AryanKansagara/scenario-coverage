@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { parseCsv } from './engine/csv.ts'
+import { csvTable } from './engine/parse.ts'
 import { computeMetrics, toTracks } from './engine/metrics.ts'
 import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
 import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
@@ -42,7 +42,7 @@ export default function DataTab({ project, traj, update }: Props) {
         list.forEach((f, i) => { const t = parseTrajectories(texts[i], f.name.replace(/\.[^.]+$/, '')); t.byRun.forEach((v, k) => byRun.set(k, [...(byRun.get(k) ?? []), ...v])); issues.push(...t.issues.map(x => ({ ...x, message: list.length > 1 ? `${f.name}: ${x.message}` : x.message }))); degrees ||= t.degrees })
         setStaged({ kind: 'traj', fileName: list.map(f => f.name).join(', '), byRun, issues, degrees })
       } else {
-        const t = fmt === 'param-json' ? jsonTable(texts[0]) : (() => { const { rows, lines } = parseCsv(texts[0]); return { headers: rows[0] ?? [], rows: rows.slice(1), lines: lines.slice(1) } })()
+        const t = fmt === 'param-json' ? jsonTable(texts[0]) : csvTable(texts[0])
         if (!t.headers.length || !t.rows.length) throw new Error('The file has a header but no data rows.')
         setStaged({ kind: 'table', format: fmt, fileName: list[0].name, ...t, map: autoMap(t.headers) })
       }
