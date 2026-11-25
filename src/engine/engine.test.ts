@@ -5,7 +5,7 @@ import { clusterFailures, extractRules, kmeans, normalise, ruleMatches } from '.
 import { binOf, coverage, findGaps, judge, judgeAll } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
 import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
-import { parseCsv } from './csv.ts'
+import { formatList, parseCsv, parseList } from './csv.ts'
 import { freeTrajKey, trajTargets } from './parse.ts'
 import { recommend, recsToCsv, recsToXosc } from './recommend.ts'
 import { DEFAULT_THRESHOLDS, simulate } from './sample.ts'
@@ -504,4 +504,17 @@ test('a bad first row or record is skipped; only mapping errors stop the import'
   assert.deepEqual([v.runs.length, v.skipped, v.issues.map(i => [i.line, i.level, i.blocks])], [12, 1, [[1, 'error', undefined]]])
   assert.deepEqual(validateTable(['id', 'Gap', 'gap'], [['a', '1', '2']], [2], ['id', 'param', 'param'], []).issues.map(i => i.blocks), [true])
   assert.deepEqual(validateTable(['id'], [['a']], [2], ['id'], []).issues.map(i => i.blocks), [true])
+})
+
+test('category lists keep commas, quotes and spaces', () => {
+  for (const l of [[], ['rain', 'dry'], ['rain, heavy', 'dry'], ['5" rim', 'a "b" c', '"', ',', ', ,'], [' lead', 'trail '], ['a\\b', "it's"]]) assert.deepEqual(parseList(formatList(l)), l)
+  assert.equal(formatList(['rain', 'dry']), 'rain, dry')
+  assert.equal(formatList(['rain, heavy', 'dry']), '"rain, heavy", dry')
+  assert.deepEqual(parseList('rain,dry , ,fog,'), ['rain', 'dry', 'fog'])
+  assert.deepEqual(parseList('"rain, heavy" , dry, "fog"'), ['rain, heavy', 'dry', 'fog'])
+  // Text that is not properly quoted is split like before.
+  assert.deepEqual(parseList('"rain, heavy'), ['"rain', 'heavy'])
+  assert.deepEqual(parseList('5" rim, a "b" c'), ['5" rim', 'a "b" c'])
+  assert.deepEqual(parseList('"a"b, c'), ['"a"b', 'c'])
+  assert.deepEqual(parseList(''), [])
 })
