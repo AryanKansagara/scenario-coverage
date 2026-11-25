@@ -330,6 +330,20 @@ test('parameter CSV: auto-mapping, inferred ODD and line-numbered validation', (
   assert.equal(v.runs[0].metrics.ttc, 2.5)
 })
 
+test('collision cells: counts, floats and words; anything else is unknown and reported', () => {
+  const table = (cell: string) => validateTable(['run_id', 'weather', 'collision'], [['a', 'rain', cell]], [2], ['id', 'param', 'collision'], [{ key: 'weather', label: 'Weather', kind: 'category', categories: ['rain'] }])
+  for (const c of ['1', '1.0', '2', 'TRUE', 'T', 'yes', 'crash', 'Collision']) assert.equal(table(c).runs[0].metrics.collision, true, c)
+  for (const c of ['0', '0.0', 'False', 'f', 'no', 'none']) assert.equal(table(c).runs[0].metrics.collision, false, c)
+  for (const c of ['unknown', '-1', 'maybe', '1?']) { const v = table(c); assert.equal('collision' in v.runs[0].metrics, false, c); assert.equal(v.issues.length, 1, c) }
+  for (const c of ['', 'NaN', 'n/a']) { const v = table(c); assert.equal('collision' in v.runs[0].metrics, false, c); assert.equal(v.issues.length, 0, c) }
+})
+
+test('signed braking, jerk and lane offset are judged by size; TTC and gap keep their sign', () => {
+  const v = validateTable(['w', 'd', 'j', 'l', 't', 'g'], [['a', '-7.2', '-13', '-1.4', '-1', '-0.2'], ['a', '-6', '1', '1', '2', '2']], [2, 3], ['param', 'maxDecel', 'maxJerk', 'laneDev', 'ttc', 'minDist'], [{ key: 'w', label: 'w', kind: 'category', categories: ['a'] }])
+  assert.deepEqual(v.runs[0].metrics, { maxDecel: 7.2, maxJerk: 13, laneDev: 1.4, ttc: -1, minDist: -0.2 })
+  assert.equal(v.issues.length, 3)
+})
+
 test('JSON parameter tables flatten nested params and metrics', () => {
   const t = jsonTable(JSON.stringify({ runs: [{ id: 'a', params: { weather: 'rain', speed: 80 }, metrics: { min_ttc: 2 } }] }))
   assert.deepEqual(t.headers, ['id', 'weather', 'speed', 'min_ttc'])
