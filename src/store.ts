@@ -10,6 +10,9 @@ export interface ImportMeta { id: string; kind: Format; fileName: string; rows: 
 export type TriageStatus = 'open' | 'triaged' | 'fixed' | 'wontfix'
 export interface Triage { status: TriageStatus; note?: string; at: number }
 
+/** A change to a project. A function gets the project as it is when the change is made, not as it was last drawn. */
+export type Update = (patch: Partial<Project> | ((p: Project) => Partial<Project>)) => Promise<unknown>
+
 export interface Project {
   id: string
   name: string
@@ -96,12 +99,13 @@ export const getProject = (id: string) => projects.find(p => p.id === id)
 
 export async function saveProject(p: Project, opts: { touch?: boolean; silent?: boolean } = {}) {
   const next = opts.touch === false ? p : { ...p, updatedAt: Date.now() }
-  await idbPut('projects', next)
+  // Published before the write, so an edit made while it runs starts from this state. Writes finish in the order they start.
   const i = projects.findIndex(x => x.id === p.id)
   if (i >= 0) projects[i] = next
   else projects.unshift(next)
   projects.sort((a, b) => b.updatedAt - a.updatedAt)
   emit()
+  await idbPut('projects', next)
   if (!opts.silent) changeHooks.forEach(f => f(next))
   return next
 }

@@ -3,7 +3,7 @@ import { clusterFailures, extractRules, type FailureCluster, type Rule } from '.
 import { coverage, findGaps, judgeAll, type Coverage, type Gap, type Verdict } from './engine/coverage.ts'
 import { generateSample, SAMPLE_ODD } from './engine/sample.ts'
 import type { Campaign, Odd, Run } from './engine/types.ts'
-import { getData, getDefaults, getProjects, putData, saveProject, sortCampaigns, useProjects, uuid, type Project, type TrajStore } from './store.ts'
+import { getData, getDefaults, getProject, getProjects, putData, saveProject, sortCampaigns, useProjects, uuid, type Project, type TrajStore, type Update } from './store.ts'
 
 export const SAMPLE_ID = 'highway-trucking'
 export const SAMPLE_NAME = 'Highway trucking (synthetic)'
@@ -50,7 +50,10 @@ export function useProject(id: string) {
     })
     return () => { live = false }
   }, [project?.id, key])
-  const update = (patch: Partial<Project>) => project ? saveProject({ ...project, ...patch }) : Promise.resolve(null)
+  const update: Update = patch => {
+    const now = getProject(id)
+    return now ? saveProject({ ...now, ...(typeof patch === 'function' ? patch(now) : patch) }) : Promise.resolve(null)
+  }
   return { loading: list === null, project, traj, update }
 }
 

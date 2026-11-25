@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { scopeFromUrl, useAnalysis, useProject, type Analysis } from './projectData.ts'
-import { sortCampaigns, type Project, type TrajStore } from './store.ts'
+import { sortCampaigns, type Project, type TrajStore, type Update } from './store.ts'
 import { Empty, fmtN, go, isTyping, Link, Modal, SyntheticBadge } from './ui.tsx'
 
 const Tabs = lazy(() => import('./Tabs.tsx'))
@@ -14,7 +14,7 @@ export interface TabProps {
   traj: TrajStore
   scope: string
   a: Analysis
-  update(p: Partial<Project>): Promise<unknown>
+  update: Update
 }
 
 export default function ProjectView({ id, tab: rawTab }: { id: string; tab: string }) {
