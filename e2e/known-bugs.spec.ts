@@ -6,7 +6,7 @@ const soon = { timeout: 8_000 }
 /** The number is the GitHub issue. SHOW_BUGS=1 runs the tests as normal ones, to see why each fails. */
 const bug = (issue: number, name: string, body: Parameters<typeof test>[2]) => (process.env.SHOW_BUGS ? test : test.fail)(`#${issue} ${name}`, body)
 
-bug(2, 'CARLA: a record without a verdict is not a pass', async ({ page }) => {
+test('#2 CARLA: a record without a verdict is not a pass', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,rain,day\nb,dry,night\n')
   await section(page, 'Data & ODD')
@@ -16,7 +16,7 @@ bug(2, 'CARLA: a record without a verdict is not a pass', async ({ page }) => {
   await expect(kpi(page, 'Failure rate')).toContainText('1 of 1 judged runs · 1 not run yet', soon)
 })
 
-bug(2, 'CARLA: a later pass does not hide an earlier failure of the same run', async ({ page }) => {
+test('#2 CARLA: a later pass does not hide an earlier failure of the same run', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,rain,day\nb,dry,night\n')
   await section(page, 'Data & ODD')
@@ -26,19 +26,19 @@ bug(2, 'CARLA: a later pass does not hide an earlier failure of the same run', a
   await expect(kpi(page, 'Failure rate')).toContainText('1 of 1 judged runs', soon)
 })
 
-bug(3, 'table: collision counts and float booleans are collisions', async ({ page }) => {
+test('#3 table: collision counts and float booleans are collisions', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,collision\na,rain,day,1.0\nb,dry,night,2\nc,dry,day,0.0\n')
   await expect(kpi(page, 'Failure rate')).toContainText('2 of 3 judged runs', soon)
 })
 
-bug(3, 'table: braking and lane offset with a minus sign are judged by size', async ({ page }) => {
+test('#3 table: braking and lane offset with a minus sign are judged by size', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,max_decel,lane_offset\na,rain,day,-7.2,0\nb,dry,night,-1,-1.4\nc,dry,day,-1,0.2\n')
   await expect(kpi(page, 'Failure rate')).toContainText('2 of 3 judged runs', soon)
 })
 
-bug(4, 'trajectories change one campaign only', async ({ page }) => {
+test('#4 trajectories change one campaign only', async ({ page }) => {
   await newProject(page)
   const t = 'run_id,weather,light,min_ttc\na,rain,day,4\nb,dry,night,4\n'
   await importTable(page, 'r.csv', t, { label: 'One', date: '2026-01-01' })
@@ -48,11 +48,11 @@ bug(4, 'trajectories change one campaign only', async ({ page }) => {
   await drop(page, { name: 't.csv', text: 'run_id,time,actor_id,x,y,heading_rad,speed,length,width\na,0,ego,0,0,0,10,4.8,1.9\na,0,car,10,0,0,0,4.8,1.9\na,1,ego,10,0,0,10,4.8,1.9\na,1,car,10,0,0,0,4.8,1.9\n' })
   await page.getByRole('button', { name: 'Compute metrics and save' }).click()
   await section(page, 'History')
-  await expect(page.getByRole('row', { name: /^One / })).toContainText('100.0%0.0%', soon)
-  await expect(page.getByRole('row', { name: /^Two / })).toContainText('100.0%50.0%', soon)
+  await expect(page.getByRole('row', { name: /^One / })).toContainText('50.0%0.0%', soon)
+  await expect(page.getByRole('row', { name: /^Two / })).toContainText('50.0%50.0%', soon)
 })
 
-bug(4, 'a run id used in two campaigns keeps its own verdict', async ({ page }) => {
+test('#4 a run id used in two campaigns keeps its own verdict', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light,min_ttc\na,rain,day,1\nb,dry,night,4\n', { label: 'One', date: '2026-01-01' })
   await section(page, 'Data & ODD')
@@ -88,7 +88,7 @@ test('#5 a fractional bin count does not break the project', async ({ page }) =>
 })
 
 const PLANNED = 'run_id,weather,gap,min_ttc\n' + [...Array(6)].map((_, i) => `f${i},rain,5,1\np${i},rain,8,\nk${i},rain,45,4\n`).join('')
-bug(6, 'planned runs are not evidence of passing', async ({ page }) => {
+test('#6 planned runs are not evidence of passing', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', PLANNED)
   // Only gap 5 (fails) and gap 45 (passes) were run; the rule splits halfway between them, at 25.
@@ -98,28 +98,28 @@ bug(6, 'planned runs are not evidence of passing', async ({ page }) => {
   await expect(page.locator('td', { hasText: /passing p\d/ })).toHaveCount(0, soon)
 })
 
-bug(6, 'a campaign that was not run has no failure rate', async ({ page }) => {
+test('#6 a campaign that was not run has no failure rate', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,rain,day\nb,dry,night\n', { label: 'Plan' })
   await section(page, 'History')
-  await expect(page.getByRole('row', { name: /^Plan / })).toContainText('100.0%—', { timeout: 8000 })
+  await expect(page.getByRole('row', { name: /^Plan / })).toContainText('50.0%—', soon)
 })
 
-bug(7, 'table: an unclosed quote is an error, not one big cell', async ({ page }) => {
+test('#7 table: an unclosed quote is an error, not one big cell', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'r.csv', text: 'run_id,weather,light\na,"rain,day\nb,dry,night\nc,dry,day\n' })
   await expect(page.getByRole('alert')).toContainText('line 2', soon)
 })
 
-bug(7, 'table: rows with the wrong number of cells are skipped', async ({ page }) => {
+test('#7 table: rows with the wrong number of cells are skipped', async ({ page }) => {
   await newProject(page)
   await drop(page, { name: 'r.csv', text: 'run_id,weather,gap,result\na,rain,3,5,fail\nb,rain,4\nc,dry,5,fail\nd,dry,6,pass\n' })
   await expect(issues(page)).toContainText('line 2', soon)
   await expect(page.getByRole('button', { name: 'Import 2 runs (skip 2)' })).toBeEnabled(soon)
 })
 
-for (const [what, name, data] of [['an Excel workbook', 'r.csv', Buffer.from([0x50, 0x4b, 3, 4, 0x14, 0, 8, 0, 10, 0x61, 0x2c, 0x62, 10, 1, 2])], ['a UTF-16 file', 'r.txt', Buffer.from('﻿run_id\tweather\tlight\r\na\train\tday\r\nb\tdry\tnight\r\n', 'utf16le')], ['an HTML page', 'r.csv', Buffer.from('<!doctype html>\n<html>\n<p>Sign in, please</p>\n</html>\n')]] as const)
-  bug(7, `table: ${what} is refused`, async ({ page }) => {
+for (const [what, name, data] of [['an Excel workbook', 'r.csv', Buffer.from([0x50, 0x4b, 3, 4, 0x14, 0, 8, 0, 10, 0x61, 0x2c, 0x62, 10, 1, 2])], ['a UTF-16 file without a BOM', 'r.txt', Buffer.from('run_id\tweather\tlight\r\na\train\tday\r\nb\tdry\tnight\r\n', 'utf16le')], ['an HTML page', 'r.csv', Buffer.from('<!doctype html>\n<html>\n<p>Sign in, please</p>\n</html>\n')]] as const)
+  test(`#7 table: ${what} is refused`, async ({ page }) => {
     await newProject(page)
     await drop(page, { name, text: data })
     await expect(page.getByRole('alert')).toContainText(`Could not read ${name}`, soon)

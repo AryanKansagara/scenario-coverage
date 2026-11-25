@@ -25,7 +25,7 @@ export function Heatmap({ odd, pair, reveal = 1, compact, onCell, selected }: { 
             const n = pair.counts[i][j], f = pair.fails[i][j]
             const shown = (i * lb.length + j) / (la.length * lb.length) < reveal
             const v = n ? Math.round(18 + 82 * Math.sqrt(n / max)) : 0
-            const rate = n ? f / n : 0
+            const done = pair.judged[i][j], rate = done ? f / done : 0
             const label = `${A.label} ${la[i]} × ${B.label} ${lb[j]}: ${n ? `${n} run${n > 1 ? 's' : ''}, ${f} failed` : 'not tested'}`
             const cls = `hm-cell${n && shown ? ' hit' : ''}${n && shown && v > 50 ? ' deep' : ''}${!n ? ' gap' : ''}${rate >= 0.5 ? ' hot' : rate > 0 ? ' warm' : ''}${selected && selected[0] === i && selected[1] === j ? ' sel' : ''}`
             return onCell
@@ -193,7 +193,7 @@ export function TrendChart({ points, compareIds }: { points: { id: string; label
   return (
     <svg className="trend" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Coverage trend: ${points.map(p => `${p.label} ${Math.round(p.pairwise * 100)}% pairwise`).join(', ')}`}>
       {[0, 0.25, 0.5, 0.75, 1].map(v => <g key={v}><line x1={padL} x2={W - padR} y1={Y(v)} y2={Y(v)} className="grid" /><text x={padL - 6} y={Y(v) + 4} textAnchor="end" className="axis">{v * 100}%</text></g>)}
-      {points.map((p, i) => <rect key={p.id} x={X(i) - bw / 2} y={Y(p.failRate)} width={bw} height={Y(0) - Y(p.failRate)} rx="4" className={`fail-bar${compareIds?.includes(p.id) ? ' on' : ''}`}><title>{`${p.label}: ${Math.round(p.failRate * 100)}% of runs failed`}</title></rect>)}
+      {points.map((p, i) => Number.isNaN(p.failRate) ? null : <rect key={p.id} x={X(i) - bw / 2} y={Y(p.failRate)} width={bw} height={Y(0) - Y(p.failRate)} rx="4" className={`fail-bar${compareIds?.includes(p.id) ? ' on' : ''}`}><title>{`${p.label}: ${Math.round(p.failRate * 100)}% of runs failed`}</title></rect>)}
       <path d={line('oneWay')} className="l-oneway" />
       <path d={line('pairwise')} className="l-pair" />
       {points.map((p, i) => <g key={p.id}><circle cx={X(i)} cy={Y(p.pairwise)} r="5" className="dot" /><text x={X(i) + (i === 0 && points.length > 1 ? 8 : 0)} y={Y(p.pairwise) - 10} textAnchor={i === 0 && points.length > 1 ? 'start' : 'middle'} className="val">{Math.round(p.pairwise * 1000) / 10}%</text>

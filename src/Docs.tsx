@@ -74,10 +74,10 @@ export default function Docs() {
       <Code code={TABLE} label="scenario_runs.csv" />
       <ul>
         <li><b>Result</b> accepts pass/fail, passed/failed, success, true/false, 1/0.</li>
-        <li><b>Metrics</b> recognised by name: <code>min_ttc</code>, <code>pet</code>, <code>min_distance</code>, <code>max_decel</code>, <code>max_jerk</code>, <code>lane_offset</code>, <code>collision</code>.</li>
+        <li><b>Metrics</b> recognised by name: <code>min_ttc</code>, <code>pet</code>, <code>min_distance</code>, <code>max_decel</code>, <code>max_jerk</code>, <code>lane_offset</code>, <code>collision</code>. Collision takes yes/no words or a count; deceleration, jerk and lane offset are judged by size, so a minus sign does not matter.</li>
         <li>JSON: an array of runs or <code>{'{ "runs": [...] }'}</code>; nested <code>params</code> and <code>metrics</code> objects are flattened.</li>
         <li>Numeric columns become ranges (5 bins), text columns categories. Edit both on the Data &amp; ODD tab.</li>
-        <li>Problems are reported with the source line: non-numeric values in a range column are errors (row skipped); values outside the ODD, unknown categories and duplicate ids are warnings.</li>
+        <li>Problems are reported with the source line: non-numeric values in a range column are errors (row skipped), as are rows with more or fewer cells than the header; values outside the ODD, unknown categories and duplicate ids are warnings.</li>
       </ul>
       <p>If runs live in a database, export them with a query and save as CSV:</p>
       <Code code={SQL} label="SQL" />
@@ -96,7 +96,7 @@ export default function Docs() {
 
       <h2 id="carla">3. CARLA scenario_runner results (JSON)</h2>
       <Code code={CARLA_CMD} label="shell" />
-      <p>scenario_runner writes one JSON file per scenario with <code>scenario</code>, <code>success</code> and a <code>criteria</code> list, each criterion carrying its own boolean <code>success</code>, <code>expected</code> and <code>actual</code>; the last entry is <code>Duration</code> against the scenario timeout. Drop all the files at once. A failed non-optional criterion fails the run and its name, actual and expected value become the reason; <code>CollisionTest</code> with an actual count above zero sets the collision flag. Leaderboard result files (<code>_checkpoint.records</code> with <code>status</code> and <code>infractions</code>) also work: a route passes when it completed with no infractions. Results attach to an existing campaign by scenario name or run id (the scenario name scenario_runner reports is the .xosc file name); anything unmatched is listed before you commit.</p>
+      <p>scenario_runner writes one JSON file per scenario with <code>scenario</code>, <code>success</code> and a <code>criteria</code> list, each criterion carrying its own boolean <code>success</code>, <code>expected</code> and <code>actual</code>; the last entry is <code>Duration</code> against the scenario timeout. Drop all the files at once. A failed non-optional criterion fails the run and its name, actual and expected value become the reason; <code>CollisionTest</code> with an actual count above zero sets the collision flag. Leaderboard result files (<code>_checkpoint.records</code> with <code>status</code> and <code>infractions</code>) also work: a route passes when it completed with no infractions. A record that states no verdict leaves its run &ldquo;not run yet&rdquo;, and when one import holds several results for a run, any failure fails it. Results attach to an existing campaign by run id, or by a scenario name that only one run has (the scenario name scenario_runner reports is the .xosc file name); anything unmatched is listed before you commit.</p>
 
       <h2 id="traj">4. Per-run trajectories (CSV)</h2>
       <p>Columns: time (s), actor id, x, y (m), heading, speed (m/s); optional <code>run_id</code> (to put many runs in one file), <code>length</code> and <code>width</code> (m). Without <code>run_id</code> the file name is the run id. Headings in degrees are detected and converted; missing speeds are derived from positions. The ego is the actor whose id or name contains &ldquo;ego&rdquo; or &ldquo;hero&rdquo;, else the first actor. When a file has no length and width, the import step asks for the ego footprint (21 × 2.6 m tractor-trailer by default, one click for a 4.8 × 1.9 m car); other actors default to 4.8 × 1.9 m.</p>
@@ -118,8 +118,8 @@ export default function Docs() {
       <h2 id="coverage">Coverage, clusters and recommendations</h2>
       <ul>
         <li><b>1-way coverage</b>: share of every parameter&rsquo;s bins with at least one run. <b>Pairwise</b>: share of every bin pair across every two parameters, the standard 2-way combinatorial measure.</li>
-        <li><b>Gaps</b> are untested 2-way cells, ranked by how often their two bins fail elsewhere.</li>
-        <li><b>Failure rules</b>: a depth-3 decision tree (Gini splits) on all runs; leaves that fail at least twice as often as the campaign (and at least 40%) become &ldquo;fails when&rdquo; rules. <b>Clusters</b>: k-means on normalised parameters (k chosen by silhouette).</li>
+        <li><b>Gaps</b> are untested 2-way cells, ranked by how often their two bins fail elsewhere. Planned runs count as covered but never as passing: rules, gap ranking, boundary runs and failure rates use runs with a verdict.</li>
+        <li><b>Failure rules</b>: a depth-3 decision tree (Gini splits) on runs with a verdict; leaves that fail at least twice as often as the campaign (and at least 40%) become &ldquo;fails when&rdquo; rules. <b>Clusters</b>: k-means on normalised parameters (k chosen by silhouette).</li>
         <li><b>Next scenarios</b>: gap-fill runs are picked greedily by new 2-way cells covered, ties broken by maximin distance to everything tested; boundary runs sit between each failing run and its nearest passing run. Export as CSV or an OpenSCENARIO 1.2 <code>ParameterValueDistribution</code> referencing your scenario file. When the ODD came from an .xosc, the export assigns the parameters by their declared names and leaves out derived dimensions such as init speeds, so esmini <code>--param_dist</code> can run it directly.</li>
       </ul>
 
