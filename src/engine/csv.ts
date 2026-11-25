@@ -59,3 +59,16 @@ export function toCsv(rows: (string | number)[][]): string {
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }).join(',')).join('\n') + '\n'
 }
+
+/** Categories as one line of text: comma separated, quoted where a category has a comma, a quote or space at its ends. */
+export const formatList = (list: string[]) => list.map(s => /[",]/.test(s) || s !== s.trim() ? `"${s.replace(/"/g, '""')}"` : s).join(', ')
+
+/** Reads formatList's text, and plain comma separated text. Blank items are dropped. */
+export function parseList(text: string): string[] {
+  const out: string[] = []
+  for (const m of text.matchAll(/\s*(?:"((?:[^"]|"")*)"\s*(?=,|$)|([^,]*))(?:,|$)/g)) {
+    const item = m[1] !== undefined ? m[1].replace(/""/g, '"') : m[2].trim()
+    if (item.trim()) out.push(item)
+  }
+  return out
+}

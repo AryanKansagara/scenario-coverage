@@ -179,7 +179,7 @@ bug(14, 'a negative ODD bound can be typed', async ({ page }) => {
   await expect(min).toHaveValue('-30', soon)
 })
 
-bug(15, 'looking at a category with a comma does not split it', async ({ page }) => {
+test('#15 looking at a category with a comma does not split it', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,"rain, heavy",day\nb,dry,night\n')
   await section(page, 'Data & ODD')
@@ -187,6 +187,21 @@ bug(15, 'looking at a category with a comma does not split it', async ({ page })
   await page.getByLabel('Categories of light').focus()
   await section(page, 'Overview')
   await expect(kpi(page, 'Untested 2-way gaps')).toContainText('all runs inside the ODD', soon)
+})
+
+test('#15 a category with a comma survives adding another one', async ({ page }) => {
+  await newProject(page)
+  await importTable(page, 'r.csv', 'run_id,weather,light\na,"rain, heavy",day\nb,dry,night\n')
+  await section(page, 'Data & ODD')
+  const cats = page.getByLabel('Categories of weather')
+  await expect(cats).toHaveValue('"rain, heavy", dry', soon)
+  await cats.fill('"rain, heavy", dry, fog')
+  await cats.blur()
+  await expect(odd(page, 'weather').getByRole('cell').nth(4)).toHaveText('3')
+  await page.reload()
+  await expect(cats).toHaveValue('"rain, heavy", dry, fog')
+  await section(page, 'Overview')
+  await expect(kpi(page, 'Untested 2-way gaps')).toContainText('all runs inside the ODD')
 })
 
 bug(16, 'recommendations reach the middle bins of a small range', async ({ page }) => {

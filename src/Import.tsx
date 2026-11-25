@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { csvTable } from './engine/parse.ts'
+import { formatList, parseList } from './engine/csv.ts'
 import { computeMetrics, toTracks } from './engine/metrics.ts'
 import { attachResults, autoMap, detect, FORMATS, inferOdd, jsonTable, norm, parseCarla, parseTrajectories, pretty, ROLE_LABEL, validateTable, xoscOdd, xoscRuns, type CarlaResult, type Format, type Issue, type Mapping, type Role, type XoscBatch } from './engine/parse.ts'
 import type { Campaign, Odd, OddParam, Run, TrajRow } from './engine/types.ts'
@@ -276,6 +277,12 @@ function TrajImport({ s, project, traj, update, done }: { s: Extract<Staged, { k
 
 // ---------- ODD editor ----------
 
+function CategoryInput({ value, save, label }: { value: string[]; save(list: string[]): void; label: string }) {
+  // A text field drops line breaks, so a category holding one must not look like an edit.
+  const text = formatList(value).replace(/[\r\n]/g, '')
+  return <input key={text} className="table-input" defaultValue={text} title="Separate categories with commas; quote one that contains a comma" onBlur={e => { if (e.target.value !== text) save(parseList(e.target.value)) }} aria-label={label} />
+}
+
 function OddEditor({ project, update }: { project: Project; update: Props['update'] }) {
   const odd = project.odd
   const set = (i: number, patch: Partial<OddParam>) => void update({ odd: odd.map((d, k) => k === i ? { ...d, ...patch } : d) })
@@ -292,7 +299,7 @@ function OddEditor({ project, update }: { project: Project; update: Props['updat
             <td><select className="table-input" value={d.kind} onChange={e => set(i, e.target.value === 'range' ? { kind: 'range', min: d.min ?? 0, max: d.max ?? 100, bins: d.bins ?? 5 } : { kind: 'category', categories: d.categories ?? [] })} aria-label={`Type of ${d.key}`}><option value="range">Range</option><option value="category">Category</option></select></td>
             <td>{d.kind === 'range'
               ? <div className="row gap-sm"><input className="table-input" type="number" value={d.min} onChange={e => set(i, { min: Number(e.target.value) })} aria-label={`Minimum ${d.key}`} /><span>to</span><input className="table-input" type="number" value={d.max} onChange={e => set(i, { max: Number(e.target.value) })} aria-label={`Maximum ${d.key}`} /></div>
-              : <input className="table-input" defaultValue={(d.categories ?? []).join(', ')} onBlur={e => set(i, { categories: e.target.value.split(',').map(x => x.trim()).filter(Boolean) })} aria-label={`Categories of ${d.key}`} />}</td>
+              : <CategoryInput value={d.categories ?? []} save={categories => set(i, { categories })} label={`Categories of ${d.key}`} />}</td>
             <td>{d.kind === 'range' ? <input className="table-input narrow" type="number" min="1" max="20" value={d.bins ?? 5} onChange={e => set(i, { bins: wholeBins(Number(e.target.value)) })} aria-label={`Bins for ${d.key}`} /> : <span className="muted small">{d.categories?.length ?? 0}</span>}</td>
             <td><input className="table-input narrow" value={d.unit ?? ''} onChange={e => set(i, { unit: e.target.value || undefined })} aria-label={`Unit of ${d.key}`} /></td>
             <td><button type="button" className="btn danger-ghost sm" onClick={async () => {
