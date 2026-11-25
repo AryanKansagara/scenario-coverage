@@ -322,6 +322,26 @@ function parseDist(text: string, ranges: Record<string, [number, number]>): Xosc
   return { scenarioFile: attrs(body.match(/<ScenarioFile\b[^>]*>/)?.[0] ?? '').filepath ?? '', sets, stochastic, testRuns: Number.isFinite(n) && n > 0 ? n : undefined, truncated: truncated || undefined }
 }
 
+/** Why an XML document (without comments) is not complete, or null. Only the tags are checked. */
+function unbalanced(text: string): string | null {
+  const open: string[] = []
+  let done = false
+  for (const m of text.matchAll(/<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![A-Za-z](?:"[^"]*"|'[^']*'|\[[\s\S]*?\]\s*(?=>)|[^"'>[])*>|<(\/?)([^\s\/<>"'=!?]+)((?:"[^"]*"|'[^']*'|[^"'<>])*)>|</g)) {
+    if (m[0] === '<') return 'a tag is cut off'
+    const name = m[2]
+    if (!name) continue
+    if (m[1]) {
+      const top = open.pop()
+      if (top !== name) return top ? `</${name}> closes <${top}>` : `</${name}> closes nothing`
+    } else {
+      if (done) return `<${name}> follows the end of the document`
+      if (!m[3].endsWith('/')) open.push(name)
+    }
+    done = !open.length
+  }
+  return open.length ? `<${open[open.length - 1]}> is never closed` : null
+}
+
 /**
  * Reads an .xosc file: top-level ParameterDeclarations (with value constraints), entities, Init absolute speeds, the
  * Init environment and the road network. `overrides` replaces declared parameter values before anything is resolved,
@@ -330,6 +350,8 @@ function parseDist(text: string, ranges: Record<string, [number, number]>): Xosc
 export function parseXosc(raw: string, overrides: Record<string, string> = {}): Xosc {
   const text = raw.replace(/<!--[\s\S]*?-->/g, '')
   if (!/<OpenSCENARIO[\s>]/.test(text)) throw new Error('Not an OpenSCENARIO file (no <OpenSCENARIO> root).')
+  const broken = unbalanced(text)
+  if (broken) throw new Error(`The file is damaged or cut off: ${broken}.`)
   const header = text.match(/<FileHeader\b[^>]*>/)
   const params: Record<string, string> = {}, ranges: Record<string, [number, number]> = {}
   const resolve = (v: string): string => {
@@ -423,7 +445,8 @@ export function xoscRuns(files: { name: string; text: string }[]): XoscBatch {
     const d = x.dist
     if (!d) continue
     const stem = name.replace(/\.xosc$/i, '')
-    const src = files.find(f => f.name !== name && base(f.name) === base(d.scenarioFile))
+    const given = files.find(f => f.name !== name && base(f.name) === base(d.scenarioFile))
+    const src = given && out.parsed.some(p => p.name === given.name) ? given : undefined
     const width = String(d.sets.length).length
     d.sets.forEach((set, i) => {
       const id = `${stem}-${String(i + 1).padStart(width, '0')}`
@@ -431,7 +454,7 @@ export function xoscRuns(files: { name: string; text: string }[]): XoscBatch {
       else variations.push({ ...xoscToRun({ name: d.scenarioFile.replace(/\.xosc$/i, '') || stem, params: set, ranges: {}, entities: [], initSpeeds: {}, env: {} }, id), id })
     })
     if (src && d.sets.length) expanded.add(src.name)
-    if (d.sets.length && !src) out.notes.push(`${name} varies ${d.scenarioFile || 'a scenario file'}, which is not in this import, so only the varied parameters are known. Drop both files together to keep the scenario's other parameters, speeds and environment.`)
+    if (d.sets.length && !src) out.notes.push(`${name} varies ${d.scenarioFile || 'a scenario file'}, which ${given ? 'could not be read' : 'is not in this import'}, so only the varied parameters are known. Drop both files together to keep the scenario's other parameters, speeds and environment.`)
     if (d.truncated) out.notes.push(`${name} enumerates more than ${MAX_SETS} combinations; only the first ${MAX_SETS} were read.`)
     if (d.stochastic.length) out.notes.push(`${name} samples ${d.stochastic.join(', ')} stochastically${d.testRuns ? ` (${d.testRuns} test runs)` : ''}. The simulator draws those values, so no runs are created for them; their ranges are used as ODD bounds.`)
     else if (!d.sets.length) out.notes.push(`${name} contains no parameter sets.`)
