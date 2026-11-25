@@ -4,7 +4,7 @@ import { csvTable } from './parse.ts'
 import { clusterFailures, extractRules, kmeans, normalise, ruleMatches } from './cluster.ts'
 import { binOf, coverage, findGaps, judge, judgeAll } from './coverage.ts'
 import { box, computeMetrics, distToPolyline, overlaps, polyDist, postEncroachment, toTracks, ttcBoxes } from './metrics.ts'
-import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
+import { attachResults, autoMap, detect, inferOdd, jsonTable, parseCarla, pickFiles, parseTrajectories, parseXosc, validateTable, xoscOdd, xoscToRun } from './parse.ts'
 import { formatList, parseCsv, parseList } from './csv.ts'
 import { freeTrajKey, trajTargets } from './parse.ts'
 import { recommend, recsToCsv, recsToXosc } from './recommend.ts'
@@ -535,4 +535,17 @@ test('recommended values stay in the bin they were drawn for, whatever the range
   for (const r of recommend(speed, [], [], { n: 5 })) assert.equal(Math.round(Number(r.params.x) * 10) / 10, r.params.x)
   // A range without a width does not produce NaN.
   for (const max of [5, 4]) for (const r of recommend([speed[0], { ...speed[1], min: 5, max }], [], [], { n: 3 })) assert.ok(Number.isFinite(r.params.x))
+})
+
+test('every file of a drop is imported or named as left out', () => {
+  const table = (n: string) => ({ name: n, text: 'run_id,weather\na,rain\n' })
+  const traj = (n: string) => ({ name: n, text: 'time,actor_id,x,y,heading\n0,ego,0,0,0\n' })
+  const carla = { name: 'c.json', text: '{"scenario":"a","success":true,"criteria":[]}' }, xosc = { name: 's.xosc', text: XOSC }
+  const pick = (...f: { name: string; text: string }[]) => { const p = pickFiles(f); return [p.format, p.take, f.filter(x => p.notice.includes(x.name)).map(x => x.name)] }
+  assert.deepEqual(pick(table('a.csv')), ['param-csv', [0], []])
+  assert.deepEqual(pick(table('a.csv'), table('b.csv')), ['param-csv', [0], ['b.csv']])
+  assert.deepEqual(pick({ name: 'a.json', text: '[{"id":"a","weather":"rain"}]' }, table('b.csv'), carla), ['param-json', [0], ['b.csv', 'c.json']])
+  assert.deepEqual(pick(traj('t1.csv'), table('b.csv'), traj('t2.csv')), ['trajectory-csv', [0, 2], ['b.csv']])
+  assert.deepEqual(pick(xosc, { ...xosc, name: 't.xosc' }), ['xosc', [0, 1], []])
+  assert.deepEqual(pick(carla, xosc, { name: 'empty.json', text: '' }), ['carla-json', [0], ['s.xosc', 'empty.json']])
 })
