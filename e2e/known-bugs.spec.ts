@@ -204,7 +204,7 @@ test('#15 a category with a comma survives adding another one', async ({ page })
   await expect(kpi(page, 'Untested 2-way gaps')).toContainText('all runs inside the ODD')
 })
 
-bug(16, 'recommendations reach the middle bins of a small range', async ({ page }) => {
+test('#16 recommendations reach the middle bins of a small range', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,curvature\na,rain,0\nb,dry,0.01\n')
   await section(page, 'Next scenarios')

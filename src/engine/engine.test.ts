@@ -518,3 +518,21 @@ test('category lists keep commas, quotes and spaces', () => {
   assert.deepEqual(parseList('"a"b, c'), ['"a"b', 'c'])
   assert.deepEqual(parseList(''), [])
 })
+
+test('recommended values stay in the bin they were drawn for, whatever the range', () => {
+  for (const [min, max, bins] of [[0, 0.01, 5], [0, 1e-5, 5], [-0.002, 0.003, 20], [0, 50, 20], [1000, 1000.5, 7], [0, 5, 3], [60, 105, 5], [-1e6, 1e6, 20], [0, 1e-9, 2]]) {
+    const odd: Odd = [{ key: 'w', label: 'W', kind: 'category', categories: ['a', 'b'] }, { key: 'x', label: 'X', kind: 'range', min, max, bins }]
+    const runs: Run[] = [{ id: 'r', scenario: 's', params: { w: 'a', x: min }, metrics: {} }]
+    const recs = recommend(odd, runs, [false], { n: 2 * bins })
+    const cov = coverage(odd, [...runs, ...recs.map(r => ({ ...runs[0], params: r.params }))])
+    assert.equal(cov.pairwisePct, 1, `${min}..${max} in ${bins}`)
+    // The CSV carries the same values.
+    const csv = parseCsv(recsToCsv(odd, recs)).rows.slice(1)
+    assert.deepEqual(csv.map(r => Number(r[2])), recs.map(r => r.params.x), `${min}..${max} in ${bins}`)
+  }
+  // Ranges whose bins were already wide enough keep their short values.
+  const speed: Odd = [{ key: 'w', label: 'W', kind: 'category', categories: ['a'] }, { key: 'x', label: 'X', kind: 'range', min: 60, max: 105, bins: 5 }]
+  for (const r of recommend(speed, [], [], { n: 5 })) assert.equal(Math.round(Number(r.params.x) * 10) / 10, r.params.x)
+  // A range without a width does not produce NaN.
+  for (const max of [5, 4]) for (const r of recommend([speed[0], { ...speed[1], min: 5, max }], [], [], { n: 3 })) assert.ok(Number.isFinite(r.params.x))
+})
