@@ -6,7 +6,7 @@ const soon = { timeout: 8_000 }
 /** The number is the GitHub issue. SHOW_BUGS=1 runs the tests as normal ones, to see why each fails. */
 const bug = (issue: number, name: string, body: Parameters<typeof test>[2]) => (process.env.SHOW_BUGS ? test : test.fail)(`#${issue} ${name}`, body)
 
-bug(2, 'CARLA: a record without a verdict is not a pass', async ({ page }) => {
+test('#2 CARLA: a record without a verdict is not a pass', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,rain,day\nb,dry,night\n')
   await section(page, 'Data & ODD')
@@ -16,7 +16,7 @@ bug(2, 'CARLA: a record without a verdict is not a pass', async ({ page }) => {
   await expect(kpi(page, 'Failure rate')).toContainText('1 of 1 judged runs · 1 not run yet', soon)
 })
 
-bug(2, 'CARLA: a later pass does not hide an earlier failure of the same run', async ({ page }) => {
+test('#2 CARLA: a later pass does not hide an earlier failure of the same run', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,light\na,rain,day\nb,dry,night\n')
   await section(page, 'Data & ODD')

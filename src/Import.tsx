@@ -183,9 +183,13 @@ function CarlaImport({ s, project, update, done }: { s: Extract<Staged, { kind: 
   const camp = list.find(c => c.id === target)
   const res = useMemo(() => attachResults(camp?.runs ?? [], s.results), [camp, s.results])
   const fails = s.results.filter(r => r.outcome === 'fail').length
+  const open = s.results.filter(r => !r.outcome).length
   const commit = async () => {
     if (camp) {
-      const extra: Run[] = res.unmatched.map((r, i) => ({ id: `${r.scenario}-${i + 1}`, scenario: r.scenario, params: {}, metrics: r.metrics, outcome: r.outcome, reason: r.reason }))
+      // A result imported again must not reuse the id it got the first time.
+      const ids = new Set(camp.runs.map(r => r.id))
+      const freeId = (name: string, k: number) => { while (ids.has(`${name}-${k}`)) k++; ids.add(`${name}-${k}`); return `${name}-${k}` }
+      const extra: Run[] = res.unmatched.map((r, i) => ({ id: freeId(r.scenario, i + 1), scenario: r.scenario, params: {}, metrics: r.metrics, outcome: r.outcome, reason: r.reason }))
       await update({ campaigns: project.campaigns.map(c => c.id === camp.id ? { ...c, runs: [...res.runs, ...extra] } : c), imports: [...project.imports, { id: uuid(), kind: 'carla-json', fileName: s.fileName, rows: s.results.length, skipped: 0, at: Date.now(), campaign: camp.id }] })
       toast(`Attached ${res.matched} results to “${camp.label}”`, { tone: 'ok' })
       go(`/app/p/${project.id}/failures`)
@@ -196,11 +200,11 @@ function CarlaImport({ s, project, update, done }: { s: Extract<Staged, { kind: 
     done()
   }
   return <>
-    <p><b>{s.fileName}</b> · CARLA results for <b>{s.results.length}</b> scenarios, <b className="error">{fails} failed</b>.</p>
+    <p><b>{s.fileName}</b> · CARLA results for <b>{s.results.length}</b> scenarios, <b className="error">{fails} failed</b>{open ? <span className="warn-text">, {open} without a verdict (kept as not run yet)</span> : null}.</p>
     <label className="field"><span>Attach to campaign (matched by scenario name or run id)</span>
       <select value={target} onChange={e => setTarget(e.target.value)}>{list.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}<option value="new">New campaign with only these results</option></select>
     </label>
-    {camp ? <p className="small">{res.matched} matched · <span className={res.unmatched.length ? 'warn-text' : ''}>{res.unmatched.length} unmatched</span>{res.unmatched.length ? ` (${res.unmatched.slice(0, 5).map(u => u.scenario).join(', ')}${res.unmatched.length > 5 ? '…' : ''}) will be added without ODD parameters and count as outside the ODD.` : ''}</p>
+    {camp ? <p className="small">{res.matched} matched · <span className={res.unmatched.length ? 'warn-text' : ''}>{res.unmatched.length} unmatched</span>{res.unmatched.length ? ` (${res.unmatched.slice(0, 5).map(u => u.scenario).join(', ')}${res.unmatched.length > 5 ? '…' : ''}) match no run, or a scenario name several runs share; they will be added without ODD parameters and count as outside the ODD.` : ''}</p>
       : <p className="warn-text small">Without a catalog the runs have no ODD parameters: verdicts and failure reasons are kept, but they cannot count towards coverage until a parameter table is imported.</p>}
     <div className="row gap"><button type="button" className="btn primary" onClick={() => void commit()}>Import results</button><button type="button" className="btn ghost" onClick={done}>Cancel</button></div>
   </>

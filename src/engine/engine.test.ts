@@ -281,6 +281,35 @@ test('CARLA scenario_runner JSON: criteria become verdicts and attach by scenari
   assert.equal(a.runs[1].outcome, 'fail')
 })
 
+test('CARLA: no verdict is not a pass, status words are whole, collisions without a result fail', () => {
+  const one = (o: object) => parseCarla(JSON.stringify([{ scenario: 'a', ...o }]))[0].outcome
+  assert.equal(one({ criteria: [] }), undefined)
+  assert.equal(one({ status: 'UNKNOWN' }), undefined)
+  assert.equal(one({ status: 'UNSUCCESSFUL' }), 'fail')
+  assert.equal(one({ status: 'not passed' }), 'fail')
+  assert.equal(one({ status: 'Success' }), 'pass')
+  assert.equal(one({ success: true }), 'pass')
+  assert.equal(one({ criteria: [{ name: 'X', actual: 1, result: 'ACCEPTABLE' }] }), 'pass')
+  assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 1 }] }), 'fail')
+  assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 0, result: 'RUNNING' }] }), undefined)
+  assert.equal(one({ criteria: [{ name: 'CollisionTest', actual: 0, result: 'SUCCESS' }] }), 'pass')
+  assert.equal(one({ success: true, criteria: [{ name: 'CollisionTest', actual: 1, success: false }] }), 'fail')
+  for (const bad of ['[]', '{"_checkpoint":{"records":[]}}', '[null]', '[1]']) assert.throws(() => parseCarla(bad))
+})
+
+test('CARLA: repetitions fail if one failed, whatever the order; shared scenario names are not guessed', () => {
+  const run = (id: string, scenario = id): Run => ({ id, scenario, params: {}, metrics: {} })
+  const bad = { scenario: 'a', outcome: 'fail' as const, reason: 'hit', metrics: { collision: true } }, good = { scenario: 'a', outcome: 'pass' as const, metrics: { collision: false } }
+  for (const list of [[bad, good], [good, bad]]) {
+    const r = attachResults([run('a')], list).runs[0]
+    assert.deepEqual([r.outcome, r.reason, r.metrics.collision], ['fail', 'hit', true])
+  }
+  // A new import is a re-run and replaces the earlier verdict.
+  assert.equal(attachResults(attachResults([run('a')], [bad]).runs, [good]).runs[0].outcome, 'pass')
+  const shared = attachResults([run('r1', 'a'), run('r2', 'a')], [bad])
+  assert.deepEqual([shared.matched, shared.unmatched.length, shared.runs[0].outcome], [0, 1, undefined])
+})
+
 test('parameter CSV: auto-mapping, inferred ODD and line-numbered validation', () => {
   const text = 'run_id,weather,ego_speed_kmh,min_ttc,result\nr1,clear,80,2.5,pass\nr2,rain,fast,1.1,fail\nr3,fog,95,,maybe\nr1,clear,140,3,pass\n'
   assert.equal(detect('runs.csv', text), 'param-csv')
