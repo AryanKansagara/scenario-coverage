@@ -5,7 +5,11 @@ import type { Odd, OddParam, Params, Run } from './types.ts'
 
 export interface Rec { id: string; params: Params; kind: 'gap' | 'boundary'; reason: string; newCells: number }
 
-const decimals = (d: OddParam) => { const span = (d.max ?? 1) - (d.min ?? 0); return span >= 50 ? 0 : span >= 5 ? 1 : 2 }
+/** Decimals for readable values: by the size of the range, with steps of a tenth of a bin or less. */
+const decimals = (d: OddParam) => {
+  const span = (d.max ?? 1) - (d.min ?? 0), base = span >= 50 ? 0 : span >= 5 ? 1 : 2
+  return span > 0 ? Math.min(100, Math.max(base, Math.ceil(1 - Math.log10(span / nBins(d)) - 1e-9))) : base
+}
 const round = (d: OddParam, x: number) => { const f = 10 ** decimals(d); return Math.min(d.max ?? x, Math.max(d.min ?? x, Math.round(x * f) / f)) }
 
 function randomPoint(odd: Odd, r: () => number, fixed: Record<string, number> = {}): Params {
@@ -114,7 +118,7 @@ export function recommend(odd: Odd, runs: Run[], failed: boolean[], opts: { n?: 
 }
 
 export function recsToCsv(odd: Odd, recs: Rec[]): string {
-  return toCsv([['id', ...odd.map(d => d.key), 'kind', 'reason'], ...recs.map(x => [x.id, ...odd.map(d => x.params[d.key] ?? ''), x.kind, x.reason])])
+  return toCsv([['id', ...odd.map(d => d.key), 'kind', 'reason'], ...recs.map(x => [x.id, ...odd.map(d => String(x.params[d.key] ?? '')), x.kind, x.reason])])
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
