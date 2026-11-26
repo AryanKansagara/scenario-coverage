@@ -443,3 +443,36 @@ test('planned runs are covered but not judged', () => {
   assert.ok(probes(passed).length && probes(passed).every(r => /passing k/.test(r.reason)))
   assert.equal(probes([false, false, false]).length, 0)
 })
+
+test('trajectory CSV: without a heading column headings follow the motion and are reported', () => {
+  // North at 10 m/s towards a stopped car; the boxes are 4.8 m long, so contact is 30.7 m away at first.
+  const csv = (h: boolean) => `time,actor_id,x,y,${h ? 'heading,' : ''}speed,length,width\n` + [0, 1, 2].map(t => `${t},ego,0,${10 * t},${h ? `${Math.PI / 2},` : ''}10,4.8,1.9\n${t},car,0,35.5,${h ? `${Math.PI / 2},` : ''}0,4.8,1.9\n`).join('')
+  const t = parseTrajectories(csv(false), 'r'), given = parseTrajectories(csv(true), 'r')
+  assert.equal(t.derived, true)
+  assert.deepEqual(computeMetrics(t.byRun.get('r')!).metrics, computeMetrics(given.byRun.get('r')!).metrics)
+  assert.equal(computeMetrics(t.byRun.get('r')!).metrics.ttc, 1.08)
+  assert.match(t.issues[0].message, /derived from positions/)
+  assert.match(t.issues[1].message, /car never moved/)
+  assert.deepEqual([given.derived, given.issues], [false, []])
+
+  const head = (rows: [number, number, number?][]) => parseTrajectories('time,id,x,y,v\n' + rows.map(([x, y, v], i) => `${i},ego,${x},${y},${v ?? 5}\n`).join(''), 'r').byRun.get('r')!.map(r => Math.round((Math.atan2(Math.sin(r.h), Math.cos(r.h)) * 180) / Math.PI) + 0)
+  assert.deepEqual(head([[0, 0], [0, 0.01], [0, 5], [0, 5.02], [0, 5]]), [90, 90, 90, 90, 90]) // noise while standing
+  assert.deepEqual(head([[0, 0], [10, 0], [10, 10]]), [0, 45, 90])
+  assert.deepEqual(head([[10, 0, -5], [5, 0, -5], [0, 0, -5]]), [0, 0, 0]) // reversing
+  assert.deepEqual(head([[0, 0], [5, 0], [0, 0]]).map(Math.abs), [0, 180, 180]) // turned back
+  assert.deepEqual(head([[0, 0]]), [0])
+  assert.deepEqual(head([[-5, 0], [-10, 0]]).map(Math.abs), [180, 180])
+})
+
+test('trajectory CSV: a unit in the heading header wins over the size of the values', () => {
+  const t = (h: string, v: number) => parseTrajectories(`time,id,x,y,${h}\n0,ego,0,0,${v}\n1,ego,1,0,${v}\n`, 'r')
+  for (const h of ['heading_rad', 'yaw_rad', 'heading (rad)']) {
+    const r = t(h, 7)
+    assert.deepEqual([r.degrees, r.derived, r.byRun.get('r')![0].h], [false, false, 7], h)
+    assert.match(r.issues[0].message, /beyond 2π/)
+  }
+  assert.equal(t('heading_deg', 1).degrees, true)
+  assert.equal(t('yaw_deg', 90).degrees, true)
+  assert.equal(t('heading', 7).degrees, true)
+  assert.equal(t('heading', 3).degrees, false)
+})
