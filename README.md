@@ -31,7 +31,7 @@ Importer tests use fixtures written to match what the tools publish (checked 202
 - OpenSCENARIO story actions, triggers and catalog contents are not interpreted; coverage uses declared parameters, init speeds and the init environment.
 - Stochastic parameter distributions set ODD bounds only; the sampled values have to come back in a result table.
 - esmini `dat2csv` output has no bounding boxes, so positions stay at the reference point (rear axle) and the ego footprint is asked for at import.
-- Lane offset assumes a straight road along the ego's starting lane unless a centreline is supplied in code; curved OpenDRIVE roads are not read.
+- Lane offset assumes a straight road along the ego's starting heading (the x axis when within 2° of it) unless a centreline is supplied in code; curved OpenDRIVE roads are not read.
 - CARLA results carry verdicts and collision flags only; TTC and gaps need a trajectory file.
 - Trajectory sets over 1.5 MB stay on the device and are not synced.
 

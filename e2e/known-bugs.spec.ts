@@ -125,7 +125,7 @@ for (const [what, name, data] of [['an Excel workbook', 'r.csv', Buffer.from([0x
     await expect(page.getByRole('alert')).toContainText(`Could not read ${name}`, soon)
   })
 
-bug(8, 'trajectory: driving straight north has no lane offset', async ({ page }) => {
+test('#8 trajectory: driving straight north has no lane offset', async ({ page }) => {
   await newProject(page)
   await importTable(page, 'r.csv', 'run_id,weather,gap\nT1,rain,40\nT2,dry,50\n')
   await section(page, 'Data & ODD')

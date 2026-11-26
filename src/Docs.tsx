@@ -112,7 +112,7 @@ export default function Docs() {
         <li><b>PET</b>: the smallest time difference between the two footprints occupying overlapping road (all sample pairs). 0 means a collision.</li>
         <li><b>Min gap</b>: closest edge-to-edge distance between boxes. 0 is a collision.</li>
         <li><b>Max deceleration and jerk</b>: finite differences of the ego speed trace.</li>
-        <li><b>Lane offset</b>: largest distance from the ego centre to the lane centreline polyline (the ego&rsquo;s starting lane on a straight road).</li>
+        <li><b>Lane offset</b>: largest distance from the ego centre to the lane centreline polyline (the ego&rsquo;s starting lane on a straight road, along its starting heading; within 2° of the x axis the road is taken to follow the axis).</li>
       </ul>
 
       <h2 id="coverage">Coverage, clusters and recommendations</h2>
